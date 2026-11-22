@@ -1183,3 +1183,188 @@ ul, ol { list-style: none; }
   border-radius: var(--radius-sm);
   font-size: 14px;
 }
+
+
+/* ============================================================
+   ДОЛГИ (Страница «Долги» и карточки)
+   ============================================================ */
+.debts-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.chips-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.debts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.debt-item {
+  padding: 14px 16px;
+  margin-bottom: 0;
+  cursor: pointer;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.debt-item:active {
+  transform: scale(0.99);
+}
+
+.debt-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.debt-counterparty {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.debt-purpose {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.debt-amount-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.debt-remainder {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.debt-original {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.debt-date-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+
+.debt-card-stat {
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.stat-val {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 4px 0;
+}
+
+.stat-sub {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.debt-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.debt-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+/* Блок обязательного выбора cash_moved */
+.debt-cash-moved-box {
+  padding: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--color-border);
+}
+
+.cash-moved-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.btn-choice {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--transition);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.btn-choice.selected {
+  border-color: var(--color-primary);
+  background: rgba(25, 118, 210, 0.08);
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn-choice.selected {
+    background: rgba(96, 165, 250, 0.15);
+  }
+}
+
+.alert-banner {
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-link {
+  font-size: 14px;
+  color: var(--color-primary);
+  font-weight: 600;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
