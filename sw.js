@@ -4,7 +4,7 @@
 // ============================================================
 
 /** Версионированное имя кэша. Поднимите номер при обновлении. */
-const CACHE_NAME = 'CACHE_V1';
+const CACHE_NAME = 'CACHE_V2';
 
 /** Список ресурсов оболочки для предзагрузки */
 const SHELL_ASSETS = [
@@ -23,7 +23,9 @@ const SHELL_ASSETS = [
   './js/ui/settings.js',
   './js/ui/toast.js',
   './manifest.webmanifest',
-  './icons/icon.svg'
+  './icons/icon.svg',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
 /**
