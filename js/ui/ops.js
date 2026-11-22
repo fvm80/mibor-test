@@ -5,14 +5,11 @@ import { getActiveData, put, addToOutbox } from '../db.js';
 import { calcIncomeExpenseTotals } from '../calc.js';
 import { scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
+import { formatDate, compareDatesDesc } from '../dates.js';
 
 const fmtAmount = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
-});
-
-const fmtDate = new Intl.DateTimeFormat('ru-RU', {
-  day: '2-digit', month: '2-digit', year: 'numeric'
 });
 
 // Текущие фильтры
@@ -199,7 +196,7 @@ function _renderList(container, ops, rates, settings, baseCurrency, currencies, 
 
   // === Список ===
   const sorted = filtered.sort((a, b) =>
-    (b.date || b.created_at || '').localeCompare(a.date || a.created_at || '')
+    compareDatesDesc(a.date || a.created_at, b.date || b.created_at)
   );
 
   const list = document.createElement('div');
@@ -221,8 +218,7 @@ function _renderList(container, ops, rates, settings, baseCurrency, currencies, 
       currentDate = opDate;
       const dh = document.createElement('div');
       dh.className = 'date-header';
-      try { dh.textContent = fmtDate.format(new Date(opDate + 'T00:00:00')); }
-      catch { dh.textContent = opDate; }
+      dh.textContent = formatDate(opDate);
       list.appendChild(dh);
     }
     list.appendChild(_createOpItem(op, container, settings));

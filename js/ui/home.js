@@ -7,19 +7,12 @@ import { formatRateDisplay, getEffectiveRate, isRateStale } from '../rates.js';
 import { sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
 import { navigate } from '../router.js';
 import { showToast } from './toast.js';
+import { formatDate, formatDateTime, isDateBeforeToday, compareDatesDesc, compareDueDatesAsc } from '../dates.js';
 
 // Форматирование суммы: пробел-разделитель тысяч, запятая-десятичный
 const fmtAmount = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
-});
-
-const fmtDate = new Intl.DateTimeFormat('ru-RU', {
-  day: '2-digit', month: '2-digit', year: 'numeric'
-});
-
-const fmtDateTime = new Intl.DateTimeFormat('ru-RU', {
-  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
 });
 
 // Хранилище для pull-to-refresh
@@ -97,11 +90,10 @@ export async function renderHome(container) {
     container.appendChild(tileGrid);
 
     // === Предупреждения: просроченные долги ===
-    const todayStr = new Date().toISOString().slice(0, 10);
     const overdueDebts = debts.filter(d =>
       d.status === 'open' &&
       d.due_date &&
-      d.due_date < todayStr &&
+      isDateBeforeToday(d.due_date) &&
       calcDebtRemainder(d, ops) > 0
     );
 
@@ -142,12 +134,12 @@ export async function renderHome(container) {
       debtsSection.appendChild(debtsHeader);
 
       openDebts.sort((a, b) => {
-        const aOverdue = a.due_date && a.due_date < todayStr;
-        const bOverdue = b.due_date && b.due_date < todayStr;
+        const aOverdue = isDateBeforeToday(a.due_date);
+        const bOverdue = isDateBeforeToday(b.due_date);
         if (aOverdue && !bOverdue) return -1;
         if (!aOverdue && bOverdue) return 1;
-        if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
-        return (b.date || '').localeCompare(a.date || '');
+        if (a.due_date && b.due_date) return compareDueDatesAsc(a.due_date, b.due_date);
+        return compareDatesDesc(a.date, b.date);
       });
 
       for (const d of openDebts.slice(0, 3)) {
@@ -177,7 +169,7 @@ export async function renderHome(container) {
 
         card.appendChild(info);
 
-        if (d.due_date && d.due_date < todayStr) {
+        if (d.due_date && isDateBeforeToday(d.due_date)) {
           const b = document.createElement('span');
           b.className = 'badge badge-expense';
           b.textContent = 'просрочен';
@@ -185,7 +177,7 @@ export async function renderHome(container) {
         } else if (d.due_date) {
           const b = document.createElement('span');
           b.className = 'badge';
-          b.textContent = `до ${fmtDate.format(new Date(d.due_date + 'T00:00:00'))}`;
+          b.textContent = `до ${formatDate(d.due_date)}`;
           card.appendChild(b);
         }
 
@@ -206,7 +198,7 @@ export async function renderHome(container) {
     opsSection.appendChild(opsTitle);
 
     const sortedOps = [...ops]
-      .sort((a, b) => (b.date || b.created_at || '').localeCompare(a.date || a.created_at || ''))
+      .sort((a, b) => compareDatesDesc(a.date || a.created_at, b.date || b.created_at))
       .slice(0, 5);
 
     if (sortedOps.length === 0) {
@@ -227,6 +219,7 @@ export async function renderHome(container) {
 
   } catch (err) {
     console.error('Ошибка отрисовки главной:', err);
+    container.innerHTML = '';
     const errorEl = document.createElement('p');
     errorEl.className = 'placeholder-text';
     errorEl.textContent = 'Ошибка загрузки данных';
@@ -291,8 +284,7 @@ function _openRateDialog(currency, rates, baseCurrency) {
   if (rateRecord.rate_auto_at) {
     const autoDate = document.createElement('div');
     autoDate.className = 'field-hint';
-    const dt = new Date(rateRecord.rate_auto_at);
-    autoDate.textContent = `обновлено ${fmtDateTime.format(dt)}, ${rateRecord.source || 'авто'}`;
+    autoDate.textContent = `обновлено ${formatDateTime(rateRecord.rate_auto_at)}, ${rateRecord.source || 'авто'}`;
     if (isRateStale(rateRecord, 24)) {
       autoDate.classList.add('text-warning');
     }
@@ -537,13 +529,13 @@ function _createRatesSection(currencies, rates, baseCurrency) {
   if (firstNonBase) {
     const info = formatRateDisplay(firstNonBase.currency, rates, baseCurrency);
     if (info.updatedAt) {
-      sub.textContent = `обновлено ${fmtDateTime.format(info.updatedAt)}, ${info.source}`;
+      sub.textContent = `обновлено ${formatDateTime(info.updatedAt)}, ${info.source}`;
     } else {
       sub.textContent = info.source || 'нажмите на курс для настройки';
     }
     if (info.stale) {
       sub.classList.add('text-warning');
-      if (info.updatedAt) sub.textContent = `курс от ${fmtDate.format(info.updatedAt)}`;
+      if (info.updatedAt) sub.textContent = `курс от ${formatDate(info.updatedAt)}`;
     }
   } else {
     sub.textContent = 'нажмите на курс для настройки';

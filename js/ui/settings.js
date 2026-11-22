@@ -4,6 +4,7 @@
 import { getMeta, setMeta, put, getAll, clear, getActiveData, getOutbox, addToOutbox } from '../db.js';
 import { ping, init, sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
+import { formatDateTime } from '../dates.js';
 
 // Перехватываем событие установки PWA (Android)
 let deferredInstallPrompt = null;
@@ -418,12 +419,8 @@ async function _sectionAbout() {
   const since = await getMeta('since');
   const syncInfo = document.createElement('div');
   syncInfo.className = 'setting-info';
-  const fmtDT = new Intl.DateTimeFormat('ru-RU', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
   syncInfo.textContent = since
-    ? `Последняя синхронизация: ${fmtDT.format(new Date(since))}`
+    ? `Последняя синхронизация: ${formatDateTime(since)}`
     : 'Синхронизация не проводилась';
   section.appendChild(syncInfo);
 

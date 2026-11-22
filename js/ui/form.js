@@ -4,6 +4,7 @@
 import { getAll, put, addToOutbox, getMeta, setMeta, getActiveData } from '../db.js';
 import { scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
+import { getTodayDateString } from '../dates.js';
 
 let currentType = 'income'; // 'income' или 'expense'
 
@@ -118,7 +119,7 @@ export async function openForm(type = 'income') {
   form.appendChild(curGroup);
 
   // Дата
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayDateString();
   const dateGroup = createField('Дата', 'date', 'date', { value: today });
   form.appendChild(dateGroup);
 

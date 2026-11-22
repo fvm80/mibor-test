@@ -6,14 +6,11 @@ import { calcDebtRemainder, calcDebtsTotal } from '../calc.js';
 import { getEffectiveRate } from '../rates.js';
 import { scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
+import { formatDate, isDateBeforeToday, compareDatesDesc, getTodayDateString } from '../dates.js';
 
 const fmtAmount = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
-});
-
-const fmtDate = new Intl.DateTimeFormat('ru-RU', {
-  day: '2-digit', month: '2-digit', year: 'numeric'
 });
 
 // Текущее состояние экрана долгов
@@ -149,13 +146,12 @@ export async function renderDebts(container) {
     }
 
     // Сортировка: сначала просроченные, затем по дате
-    const todayStr = new Date().toISOString().slice(0, 10);
     filteredDebts.sort((a, b) => {
-      const aOverdue = a.status === 'open' && a.due_date && a.due_date < todayStr;
-      const bOverdue = b.status === 'open' && b.due_date && b.due_date < todayStr;
+      const aOverdue = a.status === 'open' && isDateBeforeToday(a.due_date);
+      const bOverdue = b.status === 'open' && isDateBeforeToday(b.due_date);
       if (aOverdue && !bOverdue) return -1;
       if (!aOverdue && bOverdue) return 1;
-      return (b.date || '').localeCompare(a.date || '');
+      return compareDatesDesc(a.date, b.date);
     });
 
     if (filteredDebts.length === 0) {
@@ -175,6 +171,7 @@ export async function renderDebts(container) {
 
   } catch (err) {
     console.error('Ошибка отрисовки долгов:', err);
+    container.innerHTML = '';
     const errEl = document.createElement('p');
     errEl.className = 'placeholder-text';
     errEl.textContent = 'Ошибка загрузки данных';
@@ -192,9 +189,8 @@ function _createDebtItem(debt, ops, rates, settings, fullData, pageContainer) {
 
   const remainder = calcDebtRemainder(debt, ops);
   const totalAmount = parseFloat(debt.amount) || 0;
-  const todayStr = new Date().toISOString().slice(0, 10);
 
-  const isOverdue = debt.status === 'open' && debt.due_date && debt.due_date < todayStr;
+  const isOverdue = debt.status === 'open' && isDateBeforeToday(debt.due_date);
   const isClosed = debt.status === 'closed' || (debt.status !== 'written_off' && remainder <= 0);
   const isWrittenOff = debt.status === 'written_off';
   const isPartial = !isClosed && !isWrittenOff && remainder < totalAmount;
@@ -259,7 +255,7 @@ function _createDebtItem(debt, ops, rates, settings, fullData, pageContainer) {
   const dateRow = document.createElement('div');
   dateRow.className = 'debt-date-row';
 
-  const createdDateStr = debt.date ? fmtDate.format(new Date(debt.date + 'T00:00:00')) : '';
+  const createdDateStr = formatDate(debt.date);
   const dateText = document.createElement('span');
   dateText.textContent = `Выдан: ${createdDateStr}`;
   dateRow.appendChild(dateText);
@@ -267,8 +263,7 @@ function _createDebtItem(debt, ops, rates, settings, fullData, pageContainer) {
   if (debt.due_date) {
     const dueDateEl = document.createElement('span');
     dueDateEl.className = isOverdue ? 'text-expense' : '';
-    const dueFormatted = fmtDate.format(new Date(debt.due_date + 'T00:00:00'));
-    dueDateEl.textContent = `Срок: ${dueFormatted}`;
+    dueDateEl.textContent = `Срок: ${formatDate(debt.due_date)}`;
     dateRow.appendChild(dueDateEl);
   }
 
@@ -347,7 +342,7 @@ function _openDebtCard(debt, ops, rates, settings, fullData, pageContainer) {
   initText.textContent = debt.cash_moved ? 'Выдача денег (кассовый расход/доход)' : 'Фиксация обязательства (без движения кассы)';
   const initDate = document.createElement('div');
   initDate.className = 'text-secondary';
-  initDate.textContent = debt.date ? fmtDate.format(new Date(debt.date + 'T00:00:00')) : '';
+  initDate.textContent = formatDate(debt.date);
   initItem.appendChild(initText);
   initItem.appendChild(initDate);
   histList.appendChild(initItem);
@@ -355,7 +350,7 @@ function _openDebtCard(debt, ops, rates, settings, fullData, pageContainer) {
   // Все погашения
   const repayments = ops
     .filter(o => o.debt_id === debt.id && o.debt_role === 'repayment')
-    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    .sort((a, b) => compareDatesDesc(a.date, b.date));
 
   for (const rep of repayments) {
     const repItem = document.createElement('div');
@@ -370,7 +365,7 @@ function _openDebtCard(debt, ops, rates, settings, fullData, pageContainer) {
     }
     const repDate = document.createElement('div');
     repDate.className = 'text-secondary';
-    repDate.textContent = rep.date ? fmtDate.format(new Date(rep.date + 'T00:00:00')) : '';
+    repDate.textContent = formatDate(rep.date);
     repItem.appendChild(repInfo);
     repItem.appendChild(repDate);
     histList.appendChild(repItem);
@@ -511,7 +506,7 @@ function _openRepayDialog(debt, maxRemainder, fullData, pageContainer) {
   form.appendChild(amountGroup);
 
   // Дата погашения
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getTodayDateString();
   const dateGroup = document.createElement('div');
   dateGroup.className = 'form-group';
   const dateLabel = document.createElement('label');
@@ -731,7 +726,7 @@ function _openNewDebtDialog(defaultDirection, settings, fullData, pageContainer)
   form.appendChild(curGroup);
 
   // Дата выдачи
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getTodayDateString();
   form.appendChild(_fieldGroup('Дата', 'date', 'debt-date', { value: todayStr }));
 
   // Срок возврата (необязательно)
