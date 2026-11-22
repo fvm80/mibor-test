@@ -2,9 +2,10 @@
 // Курсы с диалогом, доступно, плитки, последние операции, pull-to-refresh
 
 import { getActiveData, put, addToOutbox } from '../db.js';
-import { calcAvailable, calcIncomeExpenseTotals, calcDebtsTotal } from '../calc.js';
+import { calcAvailable, calcIncomeExpenseTotals, calcDebtsTotal, calcDebtRemainder } from '../calc.js';
 import { formatRateDisplay, getEffectiveRate, isRateStale } from '../rates.js';
 import { sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
+import { navigate } from '../router.js';
 import { showToast } from './toast.js';
 
 // Форматирование суммы: пробел-разделитель тысяч, запятая-десятичный
@@ -94,6 +95,106 @@ export async function renderHome(container) {
     tileGrid.appendChild(expTile);
 
     container.appendChild(tileGrid);
+
+    // === Предупреждения: просроченные долги ===
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const overdueDebts = debts.filter(d =>
+      d.status === 'open' &&
+      d.due_date &&
+      d.due_date < todayStr &&
+      calcDebtRemainder(d, ops) > 0
+    );
+
+    if (overdueDebts.length > 0) {
+      const alertBox = document.createElement('div');
+      alertBox.className = 'alert-banner text-expense mb-12';
+      alertBox.textContent = `⚠️ Просрочено долгов: ${overdueDebts.length} (нажмите, чтобы открыть)`;
+      alertBox.style.cursor = 'pointer';
+      alertBox.addEventListener('click', () => navigate('#/debts'));
+      container.appendChild(alertBox);
+    }
+
+    // === Ближайшие долги (до 3) ===
+    const openDebts = debts.filter(d =>
+      d.status !== 'closed' &&
+      d.status !== 'written_off' &&
+      calcDebtRemainder(d, ops) > 0
+    );
+
+    if (openDebts.length > 0) {
+      const debtsSection = document.createElement('div');
+      debtsSection.className = 'section';
+
+      const debtsHeader = document.createElement('div');
+      debtsHeader.className = 'section-header flex-between mb-8';
+      const debtsTitle = document.createElement('h3');
+      debtsTitle.className = 'section-title mb-0';
+      debtsTitle.textContent = 'Ближайшие долги';
+      debtsHeader.appendChild(debtsTitle);
+
+      const allDebtsLink = document.createElement('button');
+      allDebtsLink.type = 'button';
+      allDebtsLink.className = 'btn-link';
+      allDebtsLink.textContent = 'Все →';
+      allDebtsLink.addEventListener('click', () => navigate('#/debts'));
+      debtsHeader.appendChild(allDebtsLink);
+
+      debtsSection.appendChild(debtsHeader);
+
+      openDebts.sort((a, b) => {
+        const aOverdue = a.due_date && a.due_date < todayStr;
+        const bOverdue = b.due_date && b.due_date < todayStr;
+        if (aOverdue && !bOverdue) return -1;
+        if (!aOverdue && bOverdue) return 1;
+        if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+        return (b.date || '').localeCompare(a.date || '');
+      });
+
+      for (const d of openDebts.slice(0, 3)) {
+        const rem = calcDebtRemainder(d, ops);
+        const card = document.createElement('div');
+        card.className = 'op-item';
+        card.style.cursor = 'pointer';
+
+        const ind = document.createElement('span');
+        ind.className = d.direction === 'owed_to_me' ? 'op-indicator text-income' : 'op-indicator text-expense';
+        ind.textContent = d.direction === 'owed_to_me' ? '←' : '→';
+        card.appendChild(ind);
+
+        const info = document.createElement('div');
+        info.className = 'op-info';
+
+        const amtEl = document.createElement('span');
+        amtEl.className = 'op-amount amount';
+        amtEl.textContent = `${fmtAmount.format(rem)} ${d.currency}`;
+        info.appendChild(amtEl);
+
+        const desc = document.createElement('span');
+        desc.className = 'op-desc';
+        const dirLabel = d.direction === 'owed_to_me' ? 'Мне должен' : 'Я должен';
+        desc.textContent = `${dirLabel}: ${d.counterparty || 'Без имени'}${d.purpose ? ' · ' + d.purpose : ''}`;
+        info.appendChild(desc);
+
+        card.appendChild(info);
+
+        if (d.due_date && d.due_date < todayStr) {
+          const b = document.createElement('span');
+          b.className = 'badge badge-expense';
+          b.textContent = 'просрочен';
+          card.appendChild(b);
+        } else if (d.due_date) {
+          const b = document.createElement('span');
+          b.className = 'badge';
+          b.textContent = `до ${fmtDate.format(new Date(d.due_date + 'T00:00:00'))}`;
+          card.appendChild(b);
+        }
+
+        card.addEventListener('click', () => navigate('#/debts'));
+        debtsSection.appendChild(card);
+      }
+
+      container.appendChild(debtsSection);
+    }
 
     // === Последние 5 операций ===
     const opsSection = document.createElement('div');
@@ -483,6 +584,21 @@ function _createTile(title, data, baseCurrency, rates) {
     line.textContent = text;
     details.appendChild(line);
   }
+
+  if (title === 'Мне должны' || title === 'Я должен') {
+    const link = document.createElement('div');
+    link.className = 'tile-detail-link text-primary mt-8';
+    link.textContent = 'Открыть раздел долгов →';
+    link.style.cursor = 'pointer';
+    link.style.fontSize = '12px';
+    link.style.fontWeight = '600';
+    link.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigate('#/debts');
+    });
+    details.appendChild(link);
+  }
+
   tile.appendChild(details);
 
   tile.addEventListener('click', () => details.classList.toggle('hidden'));
