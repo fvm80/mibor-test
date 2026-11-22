@@ -917,3 +917,246 @@ ul, ol { list-style: none; }
     background-color: rgba(251, 191, 36, 0.15);
   }
 }
+
+
+/* ============================================================
+   МОДАЛЬНЫЕ ОКНА (диалог курсов, карточка операции)
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.modal-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: 85dvh;
+  background: var(--color-surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 24px 16px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.modal-overlay.visible .modal-dialog {
+  transform: translateY(0);
+}
+
+.modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.modal-subtitle {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.modal-close:active { opacity: 0.6; }
+
+/* ============================================================
+   ПОИСК В ОПЕРАЦИЯХ
+   ============================================================ */
+.search-row {
+  margin-bottom: 12px;
+}
+
+.search-row input[type="search"] {
+  width: 100%;
+  font-size: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  -webkit-appearance: none;
+}
+
+.search-row input[type="search"]:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.15);
+}
+
+/* ============================================================
+   КУРСЫ — ЧИПЫ (кликабельные)
+   ============================================================ */
+.rate-chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 4px 10px;
+  margin-right: 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.rate-chip:active {
+  background: var(--color-bg);
+}
+
+.rate-chip.stale {
+  color: var(--color-warning);
+}
+
+/* ============================================================
+   PULL-TO-REFRESH
+   ============================================================ */
+.pull-indicator {
+  text-align: center;
+  padding: 12px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  transition: opacity 0.2s;
+}
+
+/* ============================================================
+   ПОЛЕ ТОЛЬКО ДЛЯ ЧТЕНИЯ
+   ============================================================ */
+.input-readonly {
+  background: var(--color-bg) !important;
+  color: var(--color-text-secondary) !important;
+  cursor: default;
+}
+
+/* ============================================================
+   ПОДСКАЗКА ПОЛЯ
+   ============================================================ */
+.field-hint {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+/* ============================================================
+   ДОБАВЛЕНИЕ (валюта, категория)
+   ============================================================ */
+.add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+
+.add-row input {
+  flex: 1;
+  font-size: 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.add-row .btn {
+  flex-shrink: 0;
+  height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+
+/* ============================================================
+   КНОПКА-ИКОНКА (удаление)
+   ============================================================ */
+.btn-icon {
+  min-width: 32px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  border-radius: 50%;
+  transition: background var(--transition);
+  margin-left: 4px;
+}
+
+.btn-icon:active {
+  background: var(--color-bg);
+}
+
+/* ============================================================
+   УСТАНОВКА PWA ПОДСКАЗКА
+   ============================================================ */
+.install-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+/* ============================================================
+   РЕДАКТИРУЕМЫЕ ЧИПЫ КАТЕГОРИЙ
+   ============================================================ */
+.chip-editable {
+  cursor: pointer;
+}
+
+.chip-editable:active {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+/* ============================================================
+   INLINE INFO (настройки)
+   ============================================================ */
+.setting-info-inline {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-left: 4px;
+}
+
+.settings-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
