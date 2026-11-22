@@ -2,7 +2,7 @@
 // Курсы с диалогом, доступно, плитки, последние операции, pull-to-refresh
 
 import { getActiveData, put, addToOutbox } from '../db.js';
-import { calcAvailable, calcIncomeExpenseTotals, calcDebtsTotal, calcDebtRemainder } from '../calc.js';
+import { calcAvailable, calcIncomeExpenseTotals, calcDebtsTotal, calcDebtRemainder, calcOrderSummary } from '../calc.js';
 import { formatRateDisplay, getEffectiveRate, isRateStale } from '../rates.js';
 import { sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
 import { navigate } from '../router.js';
@@ -29,7 +29,7 @@ export async function renderHome(container) {
 
   try {
     const data = await getActiveData();
-    const { ops, rates, settings, debts } = data;
+    const { ops, rates, settings, debts, orders, order_lines } = data;
 
     const baseCurrency = _getSetting(settings, 'base_currency', 'MDL');
     const currencies = _getSettingJSON(settings, 'currencies', ['MDL', 'USD', 'EUR']);
@@ -104,6 +104,97 @@ export async function renderHome(container) {
       alertBox.style.cursor = 'pointer';
       alertBox.addEventListener('click', () => navigate('#/debts'));
       container.appendChild(alertBox);
+    }
+
+    // === Предупреждения: перерасход по заказам ===
+    const overrunOrders = orders.filter(o => {
+      if (o.status !== 'planned' && o.status !== 'in_progress') return false;
+      const sum = calcOrderSummary(o, order_lines, ops, rates, baseCurrency);
+      return sum.plannedCosts > 0 && sum.totalFactCosts > sum.plannedCosts;
+    });
+
+    if (overrunOrders.length > 0) {
+      const alertBox = document.createElement('div');
+      alertBox.className = 'alert-banner text-expense mb-12';
+      alertBox.textContent = `⚠️ Перерасход по заказам: ${overrunOrders.length} (нажмите, чтобы открыть)`;
+      alertBox.style.cursor = 'pointer';
+      alertBox.addEventListener('click', () => navigate('#/orders'));
+      container.appendChild(alertBox);
+    }
+
+    // === Активные заказы (до 5) ===
+    const activeOrders = orders
+      .filter(o => o.status === 'planned' || o.status === 'in_progress')
+      .sort((a, b) => compareDatesDesc(a.start_date || a.created_at, b.start_date || b.created_at));
+
+    if (activeOrders.length > 0) {
+      const ordersSection = document.createElement('div');
+      ordersSection.className = 'section';
+
+      const ordersHeader = document.createElement('div');
+      ordersHeader.className = 'section-header flex-between mb-8';
+      const ordersTitle = document.createElement('h3');
+      ordersTitle.className = 'section-title mb-0';
+      ordersTitle.textContent = 'Активные заказы';
+      ordersHeader.appendChild(ordersTitle);
+
+      const allOrdersLink = document.createElement('button');
+      allOrdersLink.type = 'button';
+      allOrdersLink.className = 'btn-link';
+      allOrdersLink.textContent = 'Все →';
+      allOrdersLink.addEventListener('click', () => navigate('#/orders'));
+      ordersHeader.appendChild(allOrdersLink);
+
+      ordersSection.appendChild(ordersHeader);
+
+      for (const o of activeOrders.slice(0, 5)) {
+        const sum = calcOrderSummary(o, order_lines, ops, rates, baseCurrency);
+        const card = document.createElement('div');
+        card.className = 'order-item card';
+        card.style.cursor = 'pointer';
+
+        const topRow = document.createElement('div');
+        topRow.className = 'order-top-row';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'order-title';
+        nameEl.textContent = o.name;
+        topRow.appendChild(nameEl);
+
+        const recPriceEl = document.createElement('span');
+        recPriceEl.className = 'amount font-sm font-bold';
+        recPriceEl.textContent = `${fmtAmount.format(sum.received)} / ${fmtAmount.format(o.price)} ${o.currency}`;
+        topRow.appendChild(recPriceEl);
+        card.appendChild(topRow);
+
+        // Полоска затрат факт / план
+        const pWrap = document.createElement('div');
+        pWrap.className = 'progress-bar-wrap';
+        const pFill = document.createElement('div');
+        pFill.className = 'progress-bar-fill';
+        const planC = sum.plannedCosts > 0 ? sum.plannedCosts : 1;
+        const pct = Math.min(100, Math.round((sum.totalFactCosts / planC) * 100));
+        pFill.style.width = `${pct}%`;
+        if (sum.totalFactCosts > sum.plannedCosts && sum.plannedCosts > 0) {
+          pFill.classList.add('overrun');
+        }
+        pWrap.appendChild(pFill);
+        card.appendChild(pWrap);
+
+        // Прибыль
+        const botRow = document.createElement('div');
+        botRow.className = 'flex-between font-sm';
+        const pClass = sum.actualProfit >= 0 ? 'text-income' : 'text-expense';
+        botRow.innerHTML = `
+          <span class="text-secondary">Затраты: ${fmtAmount.format(sum.totalFactCosts)} / ${fmtAmount.format(sum.plannedCosts)} ${o.currency}</span>
+          <span class="font-bold ${pClass}">Прибыль: ${fmtAmount.format(sum.actualProfit)} ${o.currency}</span>
+        `;
+        card.appendChild(botRow);
+
+        card.addEventListener('click', () => navigate(`#/orders/${o.id}`));
+        ordersSection.appendChild(card);
+      }
+
+      container.appendChild(ordersSection);
     }
 
     // === Ближайшие долги (до 3) ===

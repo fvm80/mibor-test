@@ -6,6 +6,7 @@ import { calcIncomeExpenseTotals } from '../calc.js';
 import { scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
 import { formatDate, compareDatesDesc } from '../dates.js';
+import { navigate } from '../router.js';
 
 const fmtAmount = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 2,
@@ -33,7 +34,7 @@ export async function renderOps(container) {
 
   try {
     const data = await getActiveData();
-    const { ops, rates, settings } = data;
+    const { ops, rates, settings, orders } = data;
 
     const baseCurrency = _getSetting(settings, 'base_currency', 'MDL');
     const currencies = _getSettingJSON(settings, 'currencies', ['MDL', 'USD', 'EUR']);
@@ -91,7 +92,7 @@ export async function renderOps(container) {
       ...currencies.map(c => ({ key: c, label: c }))
     ], filters.currency, (key) => {
       filters.currency = key;
-      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories);
+      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
     });
 
     // Категория
@@ -101,7 +102,7 @@ export async function renderOps(container) {
         ...allCategories.map(c => ({ key: c, label: c }))
       ], filters.category, (key) => {
         filters.category = key;
-        _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories);
+        _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
       });
     }
 
@@ -112,7 +113,7 @@ export async function renderOps(container) {
     listContainer.id = 'ops-list-container';
     container.appendChild(listContainer);
 
-    _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories);
+    _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
 
   } catch (err) {
     console.error('Ошибка отрисовки операций:', err);
@@ -126,7 +127,7 @@ export async function renderOps(container) {
 /**
  * Отрисовать список с учётом фильтров (без перерисовки фильтров)
  */
-function _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories) {
+function _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders = []) {
   const listContainer = document.getElementById('ops-list-container');
   if (!listContainer) return;
   listContainer.innerHTML = '';
@@ -221,7 +222,7 @@ function _renderList(container, ops, rates, settings, baseCurrency, currencies, 
       dh.textContent = formatDate(opDate);
       list.appendChild(dh);
     }
-    list.appendChild(_createOpItem(op, container, settings));
+    list.appendChild(_createOpItem(op, container, settings, orders));
   }
 
   listContainer.appendChild(list);
@@ -233,7 +234,7 @@ function _renderList(container, ops, rates, settings, baseCurrency, currencies, 
     btn.textContent = `Показать ещё (${sorted.length - shownCount})`;
     btn.addEventListener('click', () => {
       shownCount += pageSize;
-      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories);
+      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
     });
     listContainer.appendChild(btn);
   }
@@ -243,7 +244,7 @@ function _renderList(container, ops, rates, settings, baseCurrency, currencies, 
 //  КАРТОЧКА ОПЕРАЦИИ (модальное окно)
 // ============================================================
 
-function _openOpCard(op, container, settings) {
+function _openOpCard(op, container, settings, orders = []) {
   const currencies = _getSettingJSON(settings, 'currencies', ['MDL', 'USD', 'EUR']);
   const catKey = op.type === 'income' ? 'categories_income' : 'categories_expense';
   const categories = _getSettingJSON(settings, catKey, []);
@@ -352,9 +353,28 @@ function _openOpCard(op, container, settings) {
   // Ссылка на долг
   if (isDebtOp) {
     const debtHint = document.createElement('div');
-    debtHint.className = 'field-hint text-warning';
-    debtHint.textContent = 'Эта операция привязана к долгу. Сумма, валюта и тип не редактируются здесь.';
+    debtHint.className = 'field-hint text-warning mb-8';
+    debtHint.style.cursor = 'pointer';
+    debtHint.textContent = '🤝 Привязано к долгу. Нажмите, чтобы открыть раздел долгов.';
+    debtHint.addEventListener('click', () => {
+      _closeModal(overlay);
+      navigate('#/debts');
+    });
     form.appendChild(debtHint);
+  }
+
+  // Ссылка на заказ
+  if (op.order_id) {
+    const orderObj = (orders || []).find(o => o.id === op.order_id);
+    const orderHint = document.createElement('div');
+    orderHint.className = 'field-hint text-primary mb-8';
+    orderHint.style.cursor = 'pointer';
+    orderHint.textContent = `📦 Привязано к заказу: "${orderObj ? orderObj.name : op.order_id}". Нажмите для перехода.`;
+    orderHint.addEventListener('click', () => {
+      _closeModal(overlay);
+      navigate(`#/orders/${op.order_id}`);
+    });
+    form.appendChild(orderHint);
   }
 
   dialog.appendChild(form);
@@ -439,7 +459,7 @@ function _closeModal(overlay) {
 //  ВСПОМОГАТЕЛЬНЫЕ
 // ============================================================
 
-function _createOpItem(op, container, settings) {
+function _createOpItem(op, container, settings, orders = []) {
   const item = document.createElement('div');
   item.className = 'op-item';
 
@@ -480,14 +500,15 @@ function _createOpItem(op, container, settings) {
     item.appendChild(badge);
   }
   if (op.order_id) {
+    const orderObj = (orders || []).find(o => o.id === op.order_id);
     const badge = document.createElement('span');
     badge.className = 'badge badge-order';
-    badge.textContent = 'заказ';
+    badge.textContent = orderObj ? `заказ: ${orderObj.name}` : 'заказ';
     item.appendChild(badge);
   }
 
   // Тап → карточка операции
-  item.addEventListener('click', () => _openOpCard(op, container, settings));
+  item.addEventListener('click', () => _openOpCard(op, container, settings, orders));
 
   return item;
 }

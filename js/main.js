@@ -7,6 +7,7 @@ import { sync, startAutoSync, getSyncStatus, ping } from './sync.js';
 import { renderHome } from './ui/home.js';
 import { renderOps } from './ui/ops.js';
 import { renderDebts } from './ui/debts.js';
+import { renderOrders, renderOrderCard } from './ui/orders.js';
 import { openForm, closeForm } from './ui/form.js';
 import { renderSettings } from './ui/settings.js';
 import { showToast } from './ui/toast.js';
@@ -119,6 +120,11 @@ async function initApp() {
       if (hash === '#/home') renderHome(clearContent());
       if (hash === '#/ops') renderOps(clearContent());
       if (hash === '#/debts') renderDebts(clearContent());
+      if (hash === '#/orders') renderOrders(clearContent());
+      if (hash.startsWith('#/orders/')) {
+        const orderId = hash.slice('#/orders/'.length);
+        renderOrderCard(clearContent(), { id: orderId });
+      }
     });
 
     window.addEventListener('sync-status', () => {
@@ -163,21 +169,13 @@ function registerRoutes() {
   onRoute('#/orders', () => {
     setTitle('Заказы');
     setActiveTab('#/orders');
-    const c = clearContent();
-    const p = document.createElement('p');
-    p.textContent = 'Страница заказов будет доступна в Этапе 3';
-    p.className = 'placeholder-text';
-    c.appendChild(p);
+    renderOrders(clearContent());
   });
 
   onRoute('#/orders/:id', (params) => {
     setTitle('Заказ');
     setActiveTab('#/orders');
-    const c = clearContent();
-    const p = document.createElement('p');
-    p.textContent = `Карточка заказа ${params.id} будет доступна в Этапе 3`;
-    p.className = 'placeholder-text';
-    c.appendChild(p);
+    renderOrderCard(clearContent(), params);
   });
 
   onRoute('#/debts', () => {

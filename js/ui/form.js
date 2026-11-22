@@ -5,14 +5,21 @@ import { getAll, put, addToOutbox, getMeta, setMeta, getActiveData } from '../db
 import { scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
 import { getTodayDateString } from '../dates.js';
+import { calcOrderSummary } from '../calc.js';
+
+const fmtAmount = new Intl.NumberFormat('ru-RU', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
 
 let currentType = 'income'; // 'income' или 'expense'
 
 /**
  * Открыть форму ввода
  * @param {string} type — 'income' или 'expense'
+ * @param {Object} presets — { orderId, orderLineId, currency, counterparty, purpose, amount }
  */
-export async function openForm(type = 'income') {
+export async function openForm(type = 'income', presets = {}) {
   currentType = type;
 
   const sheet = document.getElementById('bottom-sheet');
@@ -27,9 +34,9 @@ export async function openForm(type = 'income') {
   const curSetting = settings.find(s => s.key === 'currencies');
   const currencies = curSetting ? JSON.parse(curSetting.value) : ['MDL', 'USD', 'EUR'];
 
-  // Последняя использованная валюта
+  // Последняя использованная валюта (или из presets)
   const lastCurSetting = settings.find(s => s.key === 'last_currency');
-  const lastCurrency = lastCurSetting ? lastCurSetting.value : currencies[0];
+  const lastCurrency = presets.currency || (lastCurSetting ? lastCurSetting.value : currencies[0]);
 
   // Категории
   const catKey = type === 'income' ? 'categories_income' : 'categories_expense';
@@ -51,7 +58,7 @@ export async function openForm(type = 'income') {
   incomeBtn.textContent = 'Доход';
   incomeBtn.addEventListener('click', () => {
     currentType = 'income';
-    openForm('income');
+    openForm('income', presets);
   });
   typeSwitch.appendChild(incomeBtn);
 
@@ -60,7 +67,7 @@ export async function openForm(type = 'income') {
   expenseBtn.textContent = 'Расход';
   expenseBtn.addEventListener('click', () => {
     currentType = 'expense';
-    openForm('expense');
+    openForm('expense', presets);
   });
   typeSwitch.appendChild(expenseBtn);
 
@@ -87,7 +94,8 @@ export async function openForm(type = 'income') {
     inputmode: 'decimal',
     min: '0.01',
     step: '0.01',
-    placeholder: '0,00'
+    placeholder: '0,00',
+    value: presets.amount || ''
   });
   form.appendChild(amountGroup);
 
@@ -131,7 +139,8 @@ export async function openForm(type = 'income') {
   const counterpartyLabel = currentType === 'income' ? 'От кого' : 'Кому';
   const cpField = createField(counterpartyLabel, 'text', 'counterparty', {
     placeholder: counterpartyLabel,
-    list: 'dl-counterparty'
+    list: 'dl-counterparty',
+    value: presets.counterparty || ''
   });
   cpField.appendChild(_createDatalist('dl-counterparty', pastCounterparties));
   form.appendChild(cpField);
@@ -139,7 +148,8 @@ export async function openForm(type = 'income') {
   // За что
   const purposeField = createField('За что', 'text', 'purpose', {
     placeholder: 'Описание',
-    list: 'dl-purpose'
+    list: 'dl-purpose',
+    value: presets.purpose || ''
   });
   purposeField.appendChild(_createDatalist('dl-purpose', pastPurposes));
   form.appendChild(purposeField);
@@ -166,6 +176,88 @@ export async function openForm(type = 'income') {
   }
   catGroup.appendChild(catSelect);
   form.appendChild(catGroup);
+
+  // Заказ (список активных заказов)
+  const activeOrders = data.orders.filter(o => o.status === 'planned' || o.status === 'in_progress');
+  const baseCurrency = (settings.find(s => s.key === 'base_currency') || {}).value || 'MDL';
+
+  const orderGroup = document.createElement('div');
+  orderGroup.className = 'form-group';
+  const orderLabel = document.createElement('label');
+  orderLabel.textContent = 'Привязка к заказу';
+  orderGroup.appendChild(orderLabel);
+
+  const orderSelect = document.createElement('select');
+  orderSelect.name = 'order_id';
+  const noOrderOpt = document.createElement('option');
+  noOrderOpt.value = '';
+  noOrderOpt.textContent = '— без заказа —';
+  orderSelect.appendChild(noOrderOpt);
+
+  for (const o of activeOrders) {
+    const opt = document.createElement('option');
+    opt.value = o.id;
+    opt.textContent = `${o.name}${o.client ? ' (' + o.client + ')' : ''}`;
+    if (presets.orderId === o.id) opt.selected = true;
+    orderSelect.appendChild(opt);
+  }
+  orderGroup.appendChild(orderSelect);
+  form.appendChild(orderGroup);
+
+  // Позиция плана (только для расхода при выбранном заказе)
+  const lineGroup = document.createElement('div');
+  lineGroup.className = 'form-group' + (currentType === 'expense' && orderSelect.value ? '' : ' hidden');
+  const lineLabel = document.createElement('label');
+  lineLabel.textContent = 'Позиция плана';
+  lineGroup.appendChild(lineLabel);
+
+  const lineSelect = document.createElement('select');
+  lineSelect.name = 'order_line_id';
+  lineGroup.appendChild(lineSelect);
+  form.appendChild(lineGroup);
+
+  function _updateLinesDropdown(selectedOrderId, selectedLineId = '') {
+    lineSelect.innerHTML = '';
+    if (!selectedOrderId || currentType !== 'expense') {
+      lineGroup.classList.add('hidden');
+      return;
+    }
+
+    const selectedOrder = activeOrders.find(o => o.id === selectedOrderId);
+    if (!selectedOrder) {
+      lineGroup.classList.add('hidden');
+      return;
+    }
+
+    const orderLines = data.order_lines.filter(l => l.order_id === selectedOrderId && l.type !== 'labor_own');
+    const summary = calcOrderSummary(selectedOrder, data.order_lines, data.ops, data.rates, baseCurrency);
+
+    lineGroup.classList.remove('hidden');
+
+    const unplannedOpt = document.createElement('option');
+    unplannedOpt.value = '';
+    unplannedOpt.textContent = '— внеплановый расход —';
+    lineSelect.appendChild(unplannedOpt);
+
+    for (const l of orderLines) {
+      const opt = document.createElement('option');
+      opt.value = l.id;
+      const fact = summary.factByLine[l.id] || 0;
+      opt.textContent = `${l.name} (план ${fmtAmount.format(l.plan_amount)}, факт ${fmtAmount.format(fact)})`;
+      if (selectedLineId === l.id) opt.selected = true;
+      lineSelect.appendChild(opt);
+    }
+  }
+
+  // Слушатель смены заказа
+  orderSelect.addEventListener('change', () => {
+    _updateLinesDropdown(orderSelect.value);
+  });
+
+  // Первичная инициализация позиций (если заказ был выбран)
+  if (orderSelect.value) {
+    _updateLinesDropdown(orderSelect.value, presets.orderLineId);
+  }
 
   // Примечание
   const noteGroup = document.createElement('div');
@@ -242,6 +334,9 @@ async function saveEntry(form, currency, addMore) {
 
   const now = new Date().toISOString();
 
+  const orderIdVal = form.querySelector('[name="order_id"]') ? form.querySelector('[name="order_id"]').value : '';
+  const orderLineIdVal = form.querySelector('[name="order_line_id"]') ? form.querySelector('[name="order_line_id"]').value : '';
+
   const record = {
     id: crypto.randomUUID(),
     type: currentType,
@@ -251,8 +346,8 @@ async function saveEntry(form, currency, addMore) {
     counterparty: form.querySelector('[name="counterparty"]').value.trim(),
     purpose: form.querySelector('[name="purpose"]').value.trim(),
     category: form.querySelector('[name="category"]').value,
-    order_id: '',
-    order_line_id: '',
+    order_id: orderIdVal || '',
+    order_line_id: (currentType === 'expense' && orderIdVal) ? (orderLineIdVal || '') : '',
     debt_id: '',
     debt_role: '',
     rate_at_entry: '',
