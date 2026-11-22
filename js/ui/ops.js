@@ -430,7 +430,8 @@ function _openOpCard(op, container, settings) {
     if (e.target === overlay) _closeModal(overlay);
   });
   document.body.appendChild(overlay);
-  requestAnimationFrame(() => overlay.classList.add('visible'));
+  overlay.offsetHeight;
+  overlay.classList.add('visible');
 }
 
 function _closeModal(overlay) {
