@@ -1,9 +1,11 @@
 // home.js — Главная страница (#/home)
-// Курсы, доступно, плитки, последние операции
+// Курсы с диалогом, доступно, плитки, последние операции, pull-to-refresh
 
-import { getActiveData } from '../db.js';
+import { getActiveData, put, addToOutbox } from '../db.js';
 import { calcAvailable, calcIncomeExpenseTotals, calcDebtsTotal } from '../calc.js';
-import { formatRateDisplay, getEffectiveRate } from '../rates.js';
+import { formatRateDisplay, getEffectiveRate, isRateStale } from '../rates.js';
+import { sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
+import { showToast } from './toast.js';
 
 // Форматирование суммы: пробел-разделитель тысяч, запятая-десятичный
 const fmtAmount = new Intl.NumberFormat('ru-RU', {
@@ -11,15 +13,17 @@ const fmtAmount = new Intl.NumberFormat('ru-RU', {
   maximumFractionDigits: 2
 });
 
-// Форматирование даты: дд.мм.гггг
 const fmtDate = new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit', month: '2-digit', year: 'numeric'
 });
 
-// Краткая дата+время для курсов
 const fmtDateTime = new Intl.DateTimeFormat('ru-RU', {
   day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
 });
+
+// Хранилище для pull-to-refresh
+let touchStartY = 0;
+let isPulling = false;
 
 /**
  * Отрисовать главную страницу
@@ -33,16 +37,18 @@ export async function renderHome(container) {
     const data = await getActiveData();
     const { ops, rates, settings, debts } = data;
 
-    // Получаем базовую валюту
-    const baseSetting = settings.find(s => s.key === 'base_currency');
-    const baseCurrency = baseSetting ? baseSetting.value : 'MDL';
+    const baseCurrency = _getSetting(settings, 'base_currency', 'MDL');
+    const currencies = _getSettingJSON(settings, 'currencies', ['MDL', 'USD', 'EUR']);
 
-    // Получаем список валют
-    const curSetting = settings.find(s => s.key === 'currencies');
-    const currencies = curSetting ? JSON.parse(curSetting.value) : ['MDL', 'USD', 'EUR'];
+    // === Pull-to-refresh индикатор ===
+    const pullIndicator = document.createElement('div');
+    pullIndicator.className = 'pull-indicator hidden';
+    pullIndicator.id = 'pull-indicator';
+    pullIndicator.textContent = '↓ Потяните для обновления';
+    container.appendChild(pullIndicator);
 
     // === Секция курсов ===
-    const ratesSection = createRatesSection(currencies, rates, baseCurrency);
+    const ratesSection = _createRatesSection(currencies, rates, baseCurrency);
     container.appendChild(ratesSection);
 
     // === Расчёты ===
@@ -66,7 +72,7 @@ export async function renderHome(container) {
 
     const forecastLabel = document.createElement('div');
     forecastLabel.className = 'card-sublabel';
-    forecastLabel.textContent = 'Прогноз (этап 4)';
+    forecastLabel.textContent = 'Прогноз — этап 4';
     mainCard.appendChild(forecastLabel);
 
     container.appendChild(mainCard);
@@ -75,22 +81,17 @@ export async function renderHome(container) {
     const tileGrid = document.createElement('div');
     tileGrid.className = 'tile-grid';
 
-    // Плитка "Доступно"
-    tileGrid.appendChild(createTile('Доступно', available, baseCurrency, currencies, rates));
+    tileGrid.appendChild(_createTile('Доступно', available, baseCurrency, rates));
+    tileGrid.appendChild(_createTile('Мне должны', owedToMe, baseCurrency, rates));
+    tileGrid.appendChild(_createTile('Я должен', iOwe, baseCurrency, rates));
 
-    // Плитка "Мне должны"
-    tileGrid.appendChild(createTile('Мне должны', owedToMe, baseCurrency, currencies, rates));
-
-    // Плитка "Я должен"
-    tileGrid.appendChild(createTile('Я должен', iOwe, baseCurrency, currencies, rates));
-
-    // Плитка "Ожидается по заказам"
-    const expectedTile = createTile('По заказам', { byCurrency: {}, totalBase: 0 }, baseCurrency, currencies, rates);
+    // Плитка «Ожидается по заказам» — заглушка до этапа 3
+    const expTile = _createTile('По заказам', { byCurrency: {}, totalBase: 0 }, baseCurrency, rates);
     const sub = document.createElement('div');
     sub.className = 'tile-sub';
-    sub.textContent = 'Этап 3-4';
-    expectedTile.appendChild(sub);
-    tileGrid.appendChild(expectedTile);
+    sub.textContent = 'Этап 3–4';
+    expTile.appendChild(sub);
+    tileGrid.appendChild(expTile);
 
     container.appendChild(tileGrid);
 
@@ -114,11 +115,14 @@ export async function renderHome(container) {
       opsSection.appendChild(empty);
     } else {
       for (const op of sortedOps) {
-        opsSection.appendChild(createOpItem(op));
+        opsSection.appendChild(_createOpItem(op));
       }
     }
 
     container.appendChild(opsSection);
+
+    // Настроить pull-to-refresh
+    _setupPullToRefresh(container);
 
   } catch (err) {
     console.error('Ошибка отрисовки главной:', err);
@@ -129,61 +133,326 @@ export async function renderHome(container) {
   }
 }
 
+// ============================================================
+//  ДИАЛОГ КУРСОВ
+// ============================================================
+
 /**
- * Создать секцию курсов
+ * Открыть диалог редактирования курса валюты
  */
-function createRatesSection(currencies, rates, baseCurrency) {
+function _openRateDialog(currency, rates, baseCurrency) {
+  let rateRecord = rates.find(r => r.currency === currency);
+  if (!rateRecord) {
+    rateRecord = {
+      currency,
+      rate_auto: '',
+      rate_auto_at: '',
+      rate_manual: '',
+      mode: 'auto',
+      source: ''
+    };
+  }
+
+  // Создаём модальное окно
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'modal-dialog';
+
+  // Заголовок
+  const title = document.createElement('h3');
+  title.className = 'modal-title';
+  title.textContent = `Курс ${currency}`;
+  dialog.appendChild(title);
+
+  const subtitle = document.createElement('div');
+  subtitle.className = 'modal-subtitle';
+  subtitle.textContent = `${baseCurrency} за 1 ${currency}`;
+  dialog.appendChild(subtitle);
+
+  // Автоматический курс (только чтение)
+  const autoGroup = document.createElement('div');
+  autoGroup.className = 'form-group';
+  const autoLabel = document.createElement('label');
+  autoLabel.textContent = 'Автоматический курс (BNM)';
+  autoGroup.appendChild(autoLabel);
+
+  const autoInput = document.createElement('input');
+  autoInput.type = 'text';
+  autoInput.readOnly = true;
+  autoInput.value = rateRecord.rate_auto
+    ? parseFloat(rateRecord.rate_auto).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+    : 'нет данных';
+  autoInput.className = 'input-readonly';
+  autoGroup.appendChild(autoInput);
+
+  if (rateRecord.rate_auto_at) {
+    const autoDate = document.createElement('div');
+    autoDate.className = 'field-hint';
+    const dt = new Date(rateRecord.rate_auto_at);
+    autoDate.textContent = `обновлено ${fmtDateTime.format(dt)}, ${rateRecord.source || 'авто'}`;
+    if (isRateStale(rateRecord, 24)) {
+      autoDate.classList.add('text-warning');
+    }
+    autoGroup.appendChild(autoDate);
+  }
+
+  dialog.appendChild(autoGroup);
+
+  // Ручной курс
+  const manualGroup = document.createElement('div');
+  manualGroup.className = 'form-group';
+  const manualLabel = document.createElement('label');
+  manualLabel.textContent = 'Ручной курс';
+  manualGroup.appendChild(manualLabel);
+
+  const manualInput = document.createElement('input');
+  manualInput.type = 'number';
+  manualInput.inputMode = 'decimal';
+  manualInput.step = '0.0001';
+  manualInput.min = '0';
+  manualInput.placeholder = 'Введите курс';
+  manualInput.value = rateRecord.rate_manual || '';
+  manualGroup.appendChild(manualInput);
+  dialog.appendChild(manualGroup);
+
+  // Переключатель Авто / Вручную
+  const modeGroup = document.createElement('div');
+  modeGroup.className = 'form-group';
+  const modeLabel = document.createElement('label');
+  modeLabel.textContent = 'Режим';
+  modeGroup.appendChild(modeLabel);
+
+  const modeSwitch = document.createElement('div');
+  modeSwitch.className = 'type-switch';
+
+  const autoBtn = document.createElement('button');
+  autoBtn.type = 'button';
+  autoBtn.className = 'type-btn' + (rateRecord.mode !== 'manual' ? ' active income' : '');
+  autoBtn.textContent = 'Авто';
+  let currentMode = rateRecord.mode || 'auto';
+
+  const manualBtn = document.createElement('button');
+  manualBtn.type = 'button';
+  manualBtn.className = 'type-btn' + (rateRecord.mode === 'manual' ? ' active expense' : '');
+  manualBtn.textContent = 'Вручную';
+
+  autoBtn.addEventListener('click', () => {
+    currentMode = 'auto';
+    autoBtn.className = 'type-btn active income';
+    manualBtn.className = 'type-btn';
+  });
+
+  manualBtn.addEventListener('click', () => {
+    currentMode = 'manual';
+    manualBtn.className = 'type-btn active expense';
+    autoBtn.className = 'type-btn';
+  });
+
+  modeSwitch.appendChild(autoBtn);
+  modeSwitch.appendChild(manualBtn);
+  modeGroup.appendChild(modeSwitch);
+  dialog.appendChild(modeGroup);
+
+  // Кнопки
+  const btnGroup = document.createElement('div');
+  btnGroup.className = 'modal-buttons';
+
+  // Обновить сейчас
+  const refreshBtn = document.createElement('button');
+  refreshBtn.type = 'button';
+  refreshBtn.className = 'btn btn-secondary';
+  refreshBtn.textContent = 'Обновить сейчас';
+  refreshBtn.addEventListener('click', async () => {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = 'Обновление...';
+    try {
+      await refreshRates();
+      showToast('Курсы обновлены');
+      _closeModal(overlay);
+      // Перерисовать страницу
+      const container = document.getElementById('app-content');
+      if (container) renderHome(container);
+    } catch (err) {
+      showToast('Ошибка: ' + err.message);
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = 'Обновить сейчас';
+    }
+  });
+  btnGroup.appendChild(refreshBtn);
+
+  // Сохранить
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn btn-primary';
+  saveBtn.textContent = 'Сохранить';
+  saveBtn.addEventListener('click', async () => {
+    const updatedRate = {
+      ...rateRecord,
+      currency,
+      rate_manual: manualInput.value ? parseFloat(manualInput.value) : '',
+      mode: currentMode
+    };
+    try {
+      await put('rates', updatedRate);
+      await addToOutbox({ sheet: 'rates', data: updatedRate });
+      scheduleSyncAfterChange();
+      showToast('Курс сохранён');
+      _closeModal(overlay);
+      const container = document.getElementById('app-content');
+      if (container) renderHome(container);
+    } catch (err) {
+      showToast('Ошибка сохранения');
+    }
+  });
+  btnGroup.appendChild(saveBtn);
+
+  dialog.appendChild(btnGroup);
+
+  // Кнопка закрытия
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'modal-close';
+  closeBtn.textContent = '×';
+  closeBtn.setAttribute('aria-label', 'Закрыть');
+  closeBtn.addEventListener('click', () => _closeModal(overlay));
+  dialog.appendChild(closeBtn);
+
+  overlay.appendChild(dialog);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) _closeModal(overlay);
+  });
+
+  document.body.appendChild(overlay);
+  // Принудительный reflow для надёжного запуска анимации
+  overlay.offsetHeight;
+  overlay.classList.add('visible');
+}
+
+function _closeModal(overlay) {
+  overlay.classList.remove('visible');
+  setTimeout(() => overlay.remove(), 300);
+}
+
+// ============================================================
+//  PULL-TO-REFRESH
+// ============================================================
+
+function _setupPullToRefresh(container) {
+  const indicator = document.getElementById('pull-indicator');
+  if (!indicator) return;
+
+  container.addEventListener('touchstart', (e) => {
+    if (container.scrollTop <= 0) {
+      touchStartY = e.touches[0].clientY;
+      isPulling = true;
+    }
+  }, { passive: true });
+
+  container.addEventListener('touchmove', (e) => {
+    if (!isPulling) return;
+    const diff = e.touches[0].clientY - touchStartY;
+    if (diff > 60 && container.scrollTop <= 0) {
+      indicator.classList.remove('hidden');
+      indicator.textContent = '↑ Отпустите для обновления';
+    } else if (diff > 20 && container.scrollTop <= 0) {
+      indicator.classList.remove('hidden');
+      indicator.textContent = '↓ Потяните для обновления';
+    } else {
+      indicator.classList.add('hidden');
+    }
+  }, { passive: true });
+
+  container.addEventListener('touchend', async () => {
+    if (!isPulling) return;
+    isPulling = false;
+    if (!indicator.classList.contains('hidden')) {
+      indicator.textContent = 'Обновление...';
+      try {
+        await sync();
+        showToast('Обновлено');
+      } catch (err) {
+        showToast('Ошибка синхронизации');
+      }
+      indicator.classList.add('hidden');
+      renderHome(container);
+    }
+  }, { passive: true });
+}
+
+// ============================================================
+//  ВСПОМОГАТЕЛЬНЫЕ
+// ============================================================
+
+function _createRatesSection(currencies, rates, baseCurrency) {
   const section = document.createElement('div');
   section.className = 'rates-bar';
 
   const nonBase = currencies.filter(c => c !== baseCurrency);
-
   if (nonBase.length === 0) {
     section.textContent = 'Только базовая валюта';
     return section;
   }
 
-  const rateTexts = [];
+  // Обёртка для чипов
+  const chipsWrapper = document.createElement('div');
+  chipsWrapper.className = 'rates-chips-wrapper';
+
   for (const cur of nonBase) {
     const info = formatRateDisplay(cur, rates, baseCurrency);
-    rateTexts.push(`${cur} ${info.display}`);
+
+    const rateBtn = document.createElement('button');
+    rateBtn.type = 'button';
+    rateBtn.className = 'rate-chip';
+    rateBtn.setAttribute('aria-label', `Настроить курс ${cur}`);
+
+    const textSpan = document.createElement('span');
+    textSpan.textContent = `${cur} ${info.display}`;
+    rateBtn.appendChild(textSpan);
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'rate-chip-icon';
+    iconSpan.textContent = '⚙';
+    rateBtn.appendChild(iconSpan);
+
+    if (info.stale) rateBtn.classList.add('stale');
+
+    // Нажатие открывает диалог
+    rateBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      _openRateDialog(cur, rates, baseCurrency);
+    });
+    chipsWrapper.appendChild(rateBtn);
   }
+  section.appendChild(chipsWrapper);
 
-  const rateStr = document.createElement('span');
-  rateStr.className = 'rates-values';
-  rateStr.textContent = rateTexts.join(' · ');
-  section.appendChild(rateStr);
-
-  // Подпись с временем обновления
+  // Подпись
   const firstNonBase = rates.find(r => nonBase.includes(r.currency));
+  const sub = document.createElement('div');
+  sub.className = 'rates-sub';
+
   if (firstNonBase) {
     const info = formatRateDisplay(firstNonBase.currency, rates, baseCurrency);
-    const sub = document.createElement('div');
-    sub.className = 'rates-sub';
-
     if (info.updatedAt) {
       sub.textContent = `обновлено ${fmtDateTime.format(info.updatedAt)}, ${info.source}`;
     } else {
-      sub.textContent = info.source || 'нет данных';
+      sub.textContent = info.source || 'нажмите на курс для настройки';
     }
-
     if (info.stale) {
       sub.classList.add('text-warning');
-      if (info.updatedAt) {
-        sub.textContent = `курс от ${fmtDate.format(info.updatedAt)}`;
-      }
+      if (info.updatedAt) sub.textContent = `курс от ${fmtDate.format(info.updatedAt)}`;
     }
-
-    section.appendChild(sub);
+  } else {
+    sub.textContent = 'нажмите на курс для настройки';
   }
+  section.appendChild(sub);
 
   return section;
 }
 
-/**
- * Создать плитку
- */
-function createTile(title, data, baseCurrency, currencies, rates) {
+function _createTile(title, data, baseCurrency, rates) {
   const tile = document.createElement('div');
   tile.className = 'tile';
 
@@ -197,14 +466,13 @@ function createTile(title, data, baseCurrency, currencies, rates) {
   tileAmount.textContent = `${fmtAmount.format(data.totalBase)} ${baseCurrency}`;
   tile.appendChild(tileAmount);
 
-  // Разбивка по валютам (скрыта по умолчанию)
+  // Разбивка по валютам (скрыта)
   const details = document.createElement('div');
   details.className = 'tile-details hidden';
 
   for (const [cur, amount] of Object.entries(data.byCurrency)) {
     const line = document.createElement('div');
     line.className = 'tile-detail-line';
-
     let text = `${cur} ${fmtAmount.format(amount)}`;
     if (cur !== baseCurrency) {
       const rate = getEffectiveRate(cur, rates, baseCurrency);
@@ -215,21 +483,13 @@ function createTile(title, data, baseCurrency, currencies, rates) {
     line.textContent = text;
     details.appendChild(line);
   }
-
   tile.appendChild(details);
 
-  // Раскрытие по нажатию
-  tile.addEventListener('click', () => {
-    details.classList.toggle('hidden');
-  });
-
+  tile.addEventListener('click', () => details.classList.toggle('hidden'));
   return tile;
 }
 
-/**
- * Создать элемент операции
- */
-function createOpItem(op) {
+function _createOpItem(op) {
   const item = document.createElement('div');
   item.className = 'op-item';
 
@@ -256,14 +516,12 @@ function createOpItem(op) {
 
   item.appendChild(info);
 
-  // Метки
   if (op.debt_id) {
     const badge = document.createElement('span');
     badge.className = 'badge';
     badge.textContent = 'долг';
     item.appendChild(badge);
   }
-
   if (op.order_id) {
     const badge = document.createElement('span');
     badge.className = 'badge badge-order';
@@ -272,4 +530,16 @@ function createOpItem(op) {
   }
 
   return item;
+}
+
+function _getSetting(settings, key, defaultVal) {
+  const s = settings.find(s => s.key === key);
+  return s ? s.value : defaultVal;
+}
+
+function _getSettingJSON(settings, key, defaultVal) {
+  const s = settings.find(s => s.key === key);
+  if (!s) return defaultVal;
+  try { return JSON.parse(s.value); }
+  catch { return defaultVal; }
 }
