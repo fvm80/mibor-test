@@ -122,16 +122,26 @@ export async function openForm(type = 'income') {
   const dateGroup = createField('Дата', 'date', 'date', { value: today });
   form.appendChild(dateGroup);
 
+  // Автоподсказки из прошлых значений
+  const pastCounterparties = [...new Set(data.ops.map(o => o.counterparty).filter(Boolean))];
+  const pastPurposes = [...new Set(data.ops.map(o => o.purpose).filter(Boolean))];
+
   // Контрагент
   const counterpartyLabel = currentType === 'income' ? 'От кого' : 'Кому';
-  form.appendChild(createField(counterpartyLabel, 'text', 'counterparty', {
-    placeholder: counterpartyLabel
-  }));
+  const cpField = createField(counterpartyLabel, 'text', 'counterparty', {
+    placeholder: counterpartyLabel,
+    list: 'dl-counterparty'
+  });
+  cpField.appendChild(_createDatalist('dl-counterparty', pastCounterparties));
+  form.appendChild(cpField);
 
   // За что
-  form.appendChild(createField('За что', 'text', 'purpose', {
-    placeholder: 'Описание'
-  }));
+  const purposeField = createField('За что', 'text', 'purpose', {
+    placeholder: 'Описание',
+    list: 'dl-purpose'
+  });
+  purposeField.appendChild(_createDatalist('dl-purpose', pastPurposes));
+  form.appendChild(purposeField);
 
   // Категория
   const catGroup = document.createElement('div');
@@ -331,4 +341,19 @@ function createField(label, type, name, attrs = {}) {
 
   group.appendChild(input);
   return group;
+}
+
+
+/**
+ * Вспомогательная: создать datalist для автоподсказок
+ */
+function _createDatalist(id, items) {
+  const dl = document.createElement('datalist');
+  dl.id = id;
+  for (const item of items.slice(0, 50)) {
+    const opt = document.createElement('option');
+    opt.value = item;
+    dl.appendChild(opt);
+  }
+  return dl;
 }
