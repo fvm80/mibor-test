@@ -4,7 +4,7 @@
 // ============================================================
 
 /** Версионированное имя кэша. Поднимите номер при обновлении. */
-const CACHE_NAME = 'CACHE_V4';
+const CACHE_NAME = 'CACHE_V5';
 
 /** Список ресурсов оболочки для предзагрузки */
 const SHELL_ASSETS = [
@@ -12,6 +12,7 @@ const SHELL_ASSETS = [
   './index.html',
   './css/app.css',
   './js/main.js',
+  './js/dates.js',
   './js/db.js',
   './js/router.js',
   './js/sync.js',
