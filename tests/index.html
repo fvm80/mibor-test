@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Тесты calc.js — Учёт</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+    .suite { margin: 10px 0; }
+    .suite-title { font-size: 16px; font-weight: bold; color: #569cd6; margin: 15px 0 5px; }
+    .test { padding: 4px 0 4px 20px; }
+    .pass { color: #4ec9b0; }
+    .pass::before { content: "✓ "; }
+    .fail { color: #f44747; }
+    .fail::before { content: "✗ "; }
+    .summary { margin-top: 20px; font-size: 18px; padding: 10px; border-top: 1px solid #444; }
+    .error-detail { color: #f44747; padding-left: 40px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Тесты calc.js</h1>
+  <div id="results"></div>
+  <div id="summary" class="summary"></div>
+
+  <script type="module">
+    import { runTests } from './calc.test.js';
+
+    const results = document.getElementById('results');
+    const summary = document.getElementById('summary');
+
+    const { suites, passed, failed } = await runTests();
+
+    for (const suite of suites) {
+      const suiteDiv = document.createElement('div');
+      suiteDiv.className = 'suite';
+
+      const title = document.createElement('div');
+      title.className = 'suite-title';
+      title.textContent = suite.name;
+      suiteDiv.appendChild(title);
+
+      for (const test of suite.tests) {
+        const testDiv = document.createElement('div');
+        testDiv.className = 'test ' + (test.passed ? 'pass' : 'fail');
+        testDiv.textContent = test.name;
+        suiteDiv.appendChild(testDiv);
+
+        if (!test.passed && test.error) {
+          const errDiv = document.createElement('div');
+          errDiv.className = 'error-detail';
+          errDiv.textContent = test.error;
+          suiteDiv.appendChild(errDiv);
+        }
+      }
+
+      results.appendChild(suiteDiv);
+    }
+
+    summary.textContent = `Итого: ${passed} пройдено, ${failed} провалено из ${passed + failed}`;
+    summary.style.color = failed > 0 ? '#f44747' : '#4ec9b0';
+  </script>
+</body>
+</html>

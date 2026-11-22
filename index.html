@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Учёт</title>
+
+  <!-- PWA манифест -->
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <!-- Мета-теги для iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Учёт">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+  <!-- Цвет темы -->
+  <meta name="theme-color" content="#1976D2">
+
+  <!-- Стили -->
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+  <!-- ===== Шапка ===== -->
+  <header id="app-header">
+    <span id="sync-indicator" class="sync-dot sync-grey" aria-label="Статус синхронизации"></span>
+    <span id="header-title">Главная</span>
+    <button id="btn-settings" type="button" aria-label="Настройки">⚙</button>
+  </header>
+
+  <!-- ===== Контейнер страниц ===== -->
+  <main id="app-content"></main>
+
+  <!-- ===== Нижняя навигация ===== -->
+  <nav id="bottom-nav">
+    <button class="nav-btn" data-route="#/home" type="button" aria-label="Главная">
+      <span class="nav-icon">🏠</span>
+      <span class="nav-label">Главная</span>
+    </button>
+
+    <button class="nav-btn" data-route="#/ops" type="button" aria-label="Операции">
+      <span class="nav-icon">📋</span>
+      <span class="nav-label">Операции</span>
+    </button>
+
+    <button id="btn-add-income" class="nav-action nav-action-income" type="button" aria-label="Добавить доход">
+      <span class="nav-icon">＋</span>
+    </button>
+
+    <button id="btn-add-expense" class="nav-action nav-action-expense" type="button" aria-label="Добавить расход">
+      <span class="nav-icon">－</span>
+    </button>
+
+    <button class="nav-btn" data-route="#/orders" type="button" aria-label="Заказы">
+      <span class="nav-icon">📦</span>
+      <span class="nav-label">Заказы</span>
+    </button>
+
+    <button class="nav-btn" data-route="#/debts" type="button" aria-label="Долги">
+      <span class="nav-icon">🤝</span>
+      <span class="nav-label">Долги</span>
+    </button>
+  </nav>
+
+  <!-- ===== Затемнение фона шторки ===== -->
+  <div id="sheet-overlay" class="sheet-overlay"></div>
+
+  <!-- ===== Нижняя шторка ===== -->
+  <div id="bottom-sheet" class="bottom-sheet"></div>
+
+  <!-- ===== Toast ===== -->
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Основной модуль -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

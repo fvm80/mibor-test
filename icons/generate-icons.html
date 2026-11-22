@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Генератор иконок — Учёт</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+    canvas { border: 1px solid #ccc; margin: 10px; }
+    button { padding: 10px 20px; margin: 5px; font-size: 16px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>Генератор иконок приложения «Учёт»</h2>
+  <p>Нажмите кнопку для скачивания PNG-иконки нужного размера.</p>
+
+  <div>
+    <canvas id="canvas192" width="192" height="192"></canvas>
+    <canvas id="canvas512" width="512" height="512"></canvas>
+  </div>
+
+  <div>
+    <button onclick="download(192)">Скачать 192×192</button>
+    <button onclick="download(512)">Скачать 512×512</button>
+  </div>
+
+  <script>
+    // Рисуем иконку на canvas
+    function drawIcon(canvas) {
+      const ctx = canvas.getContext('2d');
+      const size = canvas.width;
+      const radius = size * 0.15; // Скругление углов
+
+      // Фон со скруглёнными углами
+      ctx.fillStyle = '#1976D2';
+      ctx.beginPath();
+      ctx.moveTo(radius, 0);
+      ctx.lineTo(size - radius, 0);
+      ctx.quadraticCurveTo(size, 0, size, radius);
+      ctx.lineTo(size, size - radius);
+      ctx.quadraticCurveTo(size, size, size - radius, size);
+      ctx.lineTo(radius, size);
+      ctx.quadraticCurveTo(0, size, 0, size - radius);
+      ctx.lineTo(0, radius);
+      ctx.quadraticCurveTo(0, 0, radius, 0);
+      ctx.closePath();
+      ctx.fill();
+
+      // Буква «У»
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${size * 0.55}px Arial, Helvetica, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('У', size / 2, size / 2);
+    }
+
+    // Рисуем на обоих canvas
+    drawIcon(document.getElementById('canvas192'));
+    drawIcon(document.getElementById('canvas512'));
+
+    // Скачивание
+    function download(size) {
+      const canvas = document.getElementById('canvas' + size);
+      const link = document.createElement('a');
+      link.download = 'icon-' + size + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+  </script>
+</body>
+</html>
