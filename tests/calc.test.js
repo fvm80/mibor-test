@@ -11,6 +11,7 @@ import {
   calcIncomeExpenseTotals,
   calcForecast
 } from '../js/calc.js';
+import { runDateTests } from './dates.test.js';
 
 // === Мини-фреймворк тестирования ===
 
@@ -320,6 +321,9 @@ describe('Утилита round2', () => {
     assert.equal(round2(0), 0);
   });
 });
+
+// Тесты модуля работы с датами
+runDateTests(describe, it, assert);
 
 // === Экспорт для запуска ===
 
