@@ -66,9 +66,22 @@ export async function sync() {
     syncStatus = 'pending';
     dispatchSyncEvent('sync-status', { status: 'pending' });
 
+    // Группируем outbox по листам и гарантируем, что data — это массив записей
+    const grouped = {};
+    for (const entry of outbox) {
+      if (!entry || !entry.sheet) continue;
+      if (!grouped[entry.sheet]) grouped[entry.sheet] = [];
+      if (Array.isArray(entry.data)) {
+        grouped[entry.sheet].push(...entry.data);
+      } else if (entry.data) {
+        grouped[entry.sheet].push(entry.data);
+      }
+    }
+    const changes = Object.entries(grouped).map(([sheet, data]) => ({ sheet, data }));
+
     const result = await callApi('sync', {
       since: since || null,
-      changes: outbox.map(entry => ({ sheet: entry.sheet, data: entry.data }))
+      changes
     });
 
     // Очищаем очередь отправленных
@@ -98,6 +111,7 @@ export async function sync() {
     // Данные в outbox остаются, будут отправлены при следующей попытке
     syncStatus = navigator.onLine ? 'error' : 'offline';
     dispatchSyncEvent('sync-status', { status: syncStatus });
+    throw err;
   }
 }
 
@@ -139,7 +153,7 @@ export function scheduleSyncAfterChange() {
     clearTimeout(syncTimer);
   }
   syncTimer = setTimeout(() => {
-    sync();
+    sync().catch(err => console.warn('Background sync failed:', err));
     syncTimer = null;
   }, 2000);
 }
@@ -152,13 +166,13 @@ export function startAutoSync() {
   // При возврате на передний план
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      sync();
+      sync().catch(err => console.warn('Visibility sync failed:', err));
     }
   });
 
   // При появлении сети
   window.addEventListener('online', () => {
-    sync();
+    sync().catch(err => console.warn('Online sync failed:', err));
   });
 
   // При потере сети
