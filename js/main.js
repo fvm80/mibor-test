@@ -6,6 +6,7 @@ import { initRouter, onRoute, navigate } from './router.js';
 import { sync, startAutoSync, getSyncStatus, ping } from './sync.js';
 import { renderHome } from './ui/home.js';
 import { renderOps } from './ui/ops.js';
+import { renderDebts } from './ui/debts.js';
 import { openForm, closeForm } from './ui/form.js';
 import { renderSettings } from './ui/settings.js';
 import { showToast } from './ui/toast.js';
@@ -117,6 +118,7 @@ async function initApp() {
       const hash = window.location.hash || '#/home';
       if (hash === '#/home') renderHome(clearContent());
       if (hash === '#/ops') renderOps(clearContent());
+      if (hash === '#/debts') renderDebts(clearContent());
     });
 
     window.addEventListener('sync-status', () => {
@@ -181,11 +183,7 @@ function registerRoutes() {
   onRoute('#/debts', () => {
     setTitle('Долги');
     setActiveTab('#/debts');
-    const c = clearContent();
-    const p = document.createElement('p');
-    p.textContent = 'Страница долгов будет доступна в Этапе 2';
-    p.className = 'placeholder-text';
-    c.appendChild(p);
+    renderDebts(clearContent());
   });
 
   onRoute('#/settings', () => {
