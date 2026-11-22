@@ -1,13 +1,19 @@
 // settings.js — Настройки (#/settings)
-// Подключение, валюты, категории, данные
+// Подключение, валюты, категории, установка PWA, данные
 
-import { getMeta, setMeta, put, getAll, clear, getActiveData, getOutbox } from '../db.js';
-import { ping, init, sync, refreshRates } from '../sync.js';
+import { getMeta, setMeta, put, getAll, clear, getActiveData, getOutbox, addToOutbox } from '../db.js';
+import { ping, init, sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
 
+// Перехватываем событие установки PWA (Android)
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+});
+
 /**
- * Отрисовать страницу настроек
- * @param {HTMLElement} container
+ * Отрисовать настройки
  */
 export async function renderSettings(container) {
   if (!container) return;
@@ -15,282 +21,493 @@ export async function renderSettings(container) {
 
   const scriptUrl = await getMeta('scriptUrl') || '';
   const token = await getMeta('token') || '';
-
-  // === Секция: Подключение ===
-  const connSection = createSection('Подключение');
-
-  // URL скрипта
-  const urlGroup = document.createElement('div');
-  urlGroup.className = 'form-group';
-  const urlLabel = document.createElement('label');
-  urlLabel.textContent = 'URL скрипта (Apps Script)';
-  urlGroup.appendChild(urlLabel);
-  const urlInput = document.createElement('input');
-  urlInput.type = 'url';
-  urlInput.name = 'scriptUrl';
-  urlInput.value = scriptUrl;
-  urlInput.placeholder = 'https://script.google.com/macros/s/.../exec';
-  urlGroup.appendChild(urlInput);
-  connSection.appendChild(urlGroup);
-
-  // Токен
-  const tokenGroup = document.createElement('div');
-  tokenGroup.className = 'form-group';
-  const tokenLabel = document.createElement('label');
-  tokenLabel.textContent = 'Токен (API_TOKEN)';
-  tokenGroup.appendChild(tokenLabel);
-  const tokenInput = document.createElement('input');
-  tokenInput.type = 'password';
-  tokenInput.name = 'token';
-  tokenInput.value = token;
-  tokenInput.placeholder = 'Секретный токен';
-  tokenGroup.appendChild(tokenInput);
-  connSection.appendChild(tokenGroup);
-
-  // Кнопка сохранения
-  const saveConnBtn = document.createElement('button');
-  saveConnBtn.className = 'btn btn-primary';
-  saveConnBtn.textContent = 'Сохранить подключение';
-  saveConnBtn.addEventListener('click', async () => {
-    const newUrl = urlInput.value.trim();
-    const newToken = tokenInput.value.trim();
-    if (!newUrl || !newToken) {
-      showToast('Заполните URL и токен');
-      return;
-    }
-    await setMeta('scriptUrl', newUrl);
-    await setMeta('token', newToken);
-    showToast('Подключение сохранено');
-  });
-  connSection.appendChild(saveConnBtn);
-
-  // Кнопки действий
-  const connButtons = document.createElement('div');
-  connButtons.className = 'settings-buttons';
-
-  const pingBtn = document.createElement('button');
-  pingBtn.className = 'btn btn-secondary';
-  pingBtn.textContent = 'Проверить связь';
-  pingBtn.addEventListener('click', async () => {
-    // Сохраняем перед проверкой
-    await setMeta('scriptUrl', urlInput.value.trim());
-    await setMeta('token', tokenInput.value.trim());
-
-    pingBtn.disabled = true;
-    pingBtn.textContent = 'Проверка...';
-    try {
-      await ping();
-      showToast('✓ Связь установлена');
-    } catch (err) {
-      showToast('✗ Ошибка: ' + err.message);
-    } finally {
-      pingBtn.disabled = false;
-      pingBtn.textContent = 'Проверить связь';
-    }
-  });
-  connButtons.appendChild(pingBtn);
-
-  const initBtn = document.createElement('button');
-  initBtn.className = 'btn btn-secondary';
-  initBtn.textContent = 'Инициализировать таблицу';
-  initBtn.addEventListener('click', async () => {
-    // Сохраняем перед инициализацией
-    await setMeta('scriptUrl', urlInput.value.trim());
-    await setMeta('token', tokenInput.value.trim());
-
-    initBtn.disabled = true;
-    initBtn.textContent = 'Инициализация...';
-    try {
-      await init();
-      showToast('✓ Таблица инициализирована');
-      // Запускаем первую синхронизацию
-      await sync();
-      showToast('✓ Данные синхронизированы');
-    } catch (err) {
-      showToast('✗ Ошибка: ' + err.message);
-    } finally {
-      initBtn.disabled = false;
-      initBtn.textContent = 'Инициализировать таблицу';
-    }
-  });
-  connButtons.appendChild(initBtn);
-
-  connSection.appendChild(connButtons);
-  container.appendChild(connSection);
-
-  // === Секция: Валюты ===
-  const curSection = createSection('Валюты');
-
   const data = await getActiveData();
   const { settings } = data;
 
-  const baseSetting = settings.find(s => s.key === 'base_currency');
-  const baseCurrency = baseSetting ? baseSetting.value : 'MDL';
+  // === Подключение ===
+  container.appendChild(_sectionConnection(scriptUrl, token));
 
-  const curSetting = settings.find(s => s.key === 'currencies');
-  const currencies = curSetting ? JSON.parse(curSetting.value) : ['MDL', 'USD', 'EUR'];
+  // === Валюты ===
+  container.appendChild(await _sectionCurrencies(settings, data));
+
+  // === Категории ===
+  container.appendChild(_sectionCategories(settings, container));
+
+  // === Установка PWA ===
+  container.appendChild(_sectionInstall());
+
+  // === Данные ===
+  container.appendChild(_sectionData(container));
+
+  // === О приложении ===
+  container.appendChild(await _sectionAbout());
+}
+
+// ============================================================
+//  ПОДКЛЮЧЕНИЕ
+// ============================================================
+
+function _sectionConnection(scriptUrl, token) {
+  const section = _createSection('Подключение');
+
+  // URL
+  const urlGroup = _field('URL скрипта (Apps Script)', 'url', 'settingsUrl', {
+    value: scriptUrl,
+    placeholder: 'https://script.google.com/macros/s/.../exec'
+  });
+  section.appendChild(urlGroup);
+
+  // Токен
+  const tokenGroup = _field('Токен (API_TOKEN)', 'password', 'settingsToken', {
+    value: token,
+    placeholder: 'Секретный токен'
+  });
+  section.appendChild(tokenGroup);
+
+  // Сохранить
+  const saveBtn = _btn('Сохранить подключение', 'btn-primary', async () => {
+    const u = section.querySelector('[name="settingsUrl"]').value.trim();
+    const t = section.querySelector('[name="settingsToken"]').value.trim();
+    if (!u || !t) { showToast('Заполните URL и токен'); return; }
+    await setMeta('scriptUrl', u);
+    await setMeta('token', t);
+    showToast('Подключение сохранено');
+  });
+  section.appendChild(saveBtn);
+
+  // Кнопки действий
+  const btns = document.createElement('div');
+  btns.className = 'settings-buttons';
+
+  btns.appendChild(_btn('Проверить связь', 'btn-secondary', async (btn) => {
+    await setMeta('scriptUrl', section.querySelector('[name="settingsUrl"]').value.trim());
+    await setMeta('token', section.querySelector('[name="settingsToken"]').value.trim());
+    btn.disabled = true; btn.textContent = 'Проверка...';
+    try { await ping(); showToast('✓ Связь установлена'); }
+    catch (e) { showToast('✗ ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Проверить связь'; }
+  }));
+
+  btns.appendChild(_btn('Инициализировать таблицу', 'btn-secondary', async (btn) => {
+    await setMeta('scriptUrl', section.querySelector('[name="settingsUrl"]').value.trim());
+    await setMeta('token', section.querySelector('[name="settingsToken"]').value.trim());
+    btn.disabled = true; btn.textContent = 'Инициализация...';
+    try {
+      await init();
+      await sync();
+      showToast('✓ Таблица готова, данные синхронизированы');
+    } catch (e) { showToast('✗ ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Инициализировать таблицу'; }
+  }));
+
+  section.appendChild(btns);
+  return section;
+}
+
+// ============================================================
+//  ВАЛЮТЫ
+// ============================================================
+
+async function _sectionCurrencies(settings, data) {
+  const section = _createSection('Валюты');
+
+  const baseCurrency = _sv(settings, 'base_currency', 'MDL');
+  const currencies = _svJSON(settings, 'currencies', ['MDL', 'USD', 'EUR']);
 
   const baseInfo = document.createElement('div');
   baseInfo.className = 'setting-info';
-  baseInfo.textContent = `Базовая валюта: ${baseCurrency} (нельзя изменить)`;
-  curSection.appendChild(baseInfo);
+  baseInfo.textContent = `Базовая валюта: ${baseCurrency} (нельзя изменить после создания данных)`;
+  section.appendChild(baseInfo);
 
+  // Список валют
   const curList = document.createElement('div');
   curList.className = 'settings-list';
+
   for (const cur of currencies) {
     const item = document.createElement('div');
     item.className = 'settings-list-item';
-    item.textContent = cur;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = cur;
+    item.appendChild(nameSpan);
+
     if (cur === baseCurrency) {
       const badge = document.createElement('span');
       badge.className = 'badge';
       badge.textContent = 'базовая';
       item.appendChild(badge);
+    } else {
+      // Кнопка удаления (только если нет записей в этой валюте)
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn-icon';
+      delBtn.textContent = '✕';
+      delBtn.setAttribute('aria-label', `Удалить ${cur}`);
+      delBtn.addEventListener('click', async () => {
+        // Проверяем наличие записей
+        const hasOps = data.ops.some(o => o.currency === cur);
+        const hasDebts = data.debts.some(d => d.currency === cur);
+        const hasOrders = data.orders.some(o => o.currency === cur);
+        if (hasOps || hasDebts || hasOrders) {
+          showToast(`Нельзя удалить ${cur}: есть записи в этой валюте`);
+          return;
+        }
+        if (!confirm(`Удалить валюту ${cur}?`)) return;
+        const updated = currencies.filter(c => c !== cur);
+        await _saveSetting(settings, 'currencies', JSON.stringify(updated));
+        showToast(`${cur} удалена`);
+        // Перерисовать
+        const container = document.getElementById('app-content');
+        if (container) renderSettings(container);
+      });
+      item.appendChild(delBtn);
     }
+
+    // Режим курса
+    const rateRecord = data.rates.find(r => r.currency === cur);
+    if (rateRecord && cur !== baseCurrency) {
+      const modeSpan = document.createElement('span');
+      modeSpan.className = 'setting-info-inline';
+      modeSpan.textContent = rateRecord.mode === 'manual' ? 'вручную' : 'авто';
+      item.appendChild(modeSpan);
+    }
+
     curList.appendChild(item);
   }
-  curSection.appendChild(curList);
-  container.appendChild(curSection);
+  section.appendChild(curList);
 
-  // === Секция: Категории ===
-  const catSection = createSection('Категории');
+  // Добавить валюту
+  const addRow = document.createElement('div');
+  addRow.className = 'add-row';
 
-  const catIncomeSetting = settings.find(s => s.key === 'categories_income');
-  const catIncome = catIncomeSetting ? JSON.parse(catIncomeSetting.value) : [];
+  const addInput = document.createElement('input');
+  addInput.type = 'text';
+  addInput.placeholder = 'Код ISO (напр. GBP)';
+  addInput.maxLength = 3;
+  addInput.style.textTransform = 'uppercase';
+  addRow.appendChild(addInput);
 
-  const catExpenseSetting = settings.find(s => s.key === 'categories_expense');
-  const catExpense = catExpenseSetting ? JSON.parse(catExpenseSetting.value) : [];
+  addRow.appendChild(_btn('Добавить', 'btn-secondary', async () => {
+    const code = addInput.value.trim().toUpperCase();
+    if (!code || code.length < 2 || code.length > 3) {
+      showToast('Введите код валюты (2-3 буквы)');
+      return;
+    }
+    if (currencies.includes(code)) {
+      showToast(`${code} уже добавлена`);
+      return;
+    }
+    const updated = [...currencies, code];
+    await _saveSetting(settings, 'currencies', JSON.stringify(updated));
+    // Создаём запись в rates для новой валюты
+    const newRate = { currency: code, rate_auto: '', rate_auto_at: '', rate_manual: '', mode: 'auto', source: '' };
+    await put('rates', newRate);
+    await addToOutbox({ sheet: 'rates', data: newRate });
+    scheduleSyncAfterChange();
+    showToast(`${code} добавлена`);
+    const container = document.getElementById('app-content');
+    if (container) renderSettings(container);
+  }));
 
+  section.appendChild(addRow);
+  return section;
+}
+
+// ============================================================
+//  КАТЕГОРИИ
+// ============================================================
+
+function _sectionCategories(settings, pageContainer) {
+  const section = _createSection('Категории');
+
+  // Доходы
   const incomeTitle = document.createElement('h4');
   incomeTitle.textContent = 'Доходы';
-  catSection.appendChild(incomeTitle);
-  const incomeList = document.createElement('div');
-  incomeList.className = 'chips-list';
-  for (const cat of catIncome) {
-    const chip = document.createElement('span');
-    chip.className = 'chip';
-    chip.textContent = cat;
-    incomeList.appendChild(chip);
-  }
-  catSection.appendChild(incomeList);
+  section.appendChild(incomeTitle);
+  section.appendChild(_categoryList(settings, 'categories_income', pageContainer));
 
+  // Расходы
   const expenseTitle = document.createElement('h4');
   expenseTitle.textContent = 'Расходы';
-  catSection.appendChild(expenseTitle);
-  const expenseList = document.createElement('div');
-  expenseList.className = 'chips-list';
-  for (const cat of catExpense) {
+  section.appendChild(expenseTitle);
+  section.appendChild(_categoryList(settings, 'categories_expense', pageContainer));
+
+  return section;
+}
+
+function _categoryList(settings, settingKey, pageContainer) {
+  const categories = _svJSON(settings, settingKey, []);
+  const wrapper = document.createElement('div');
+
+  const list = document.createElement('div');
+  list.className = 'chips-list';
+
+  for (const cat of categories) {
     const chip = document.createElement('span');
-    chip.className = 'chip';
+    chip.className = 'chip chip-editable';
     chip.textContent = cat;
-    expenseList.appendChild(chip);
+
+    // Долгое нажатие / клик → переименовать или скрыть
+    chip.addEventListener('click', async () => {
+      const action = prompt(
+        `Категория: «${cat}»\n\nВведите новое имя для переименования,\nили оставьте пустым и нажмите OK чтобы удалить:`,
+        cat
+      );
+      if (action === null) return; // Отмена
+
+      let updated;
+      if (action.trim() === '') {
+        // Удаление
+        if (!confirm(`Удалить категорию «${cat}»?`)) return;
+        updated = categories.filter(c => c !== cat);
+      } else if (action.trim() !== cat) {
+        // Переименование
+        updated = categories.map(c => c === cat ? action.trim() : c);
+      } else {
+        return; // Без изменений
+      }
+
+      await _saveSetting(settings, settingKey, JSON.stringify(updated));
+      showToast('Категории обновлены');
+      renderSettings(pageContainer);
+    });
+
+    list.appendChild(chip);
   }
-  catSection.appendChild(expenseList);
-  container.appendChild(catSection);
+  wrapper.appendChild(list);
 
-  // === Секция: Данные ===
-  const dataSection = createSection('Данные');
+  // Добавить категорию
+  const addRow = document.createElement('div');
+  addRow.className = 'add-row';
 
-  const dataButtons = document.createElement('div');
-  dataButtons.className = 'settings-buttons';
+  const addInput = document.createElement('input');
+  addInput.type = 'text';
+  addInput.placeholder = 'Новая категория';
+  addRow.appendChild(addInput);
 
-  const syncBtn = document.createElement('button');
-  syncBtn.className = 'btn btn-secondary';
-  syncBtn.textContent = 'Синхронизировать сейчас';
-  syncBtn.addEventListener('click', async () => {
-    syncBtn.disabled = true;
-    syncBtn.textContent = 'Синхронизация...';
-    try {
-      await sync();
-      showToast('✓ Синхронизировано');
-    } catch (err) {
-      showToast('✗ Ошибка: ' + err.message);
-    } finally {
-      syncBtn.disabled = false;
-      syncBtn.textContent = 'Синхронизировать сейчас';
-    }
-  });
-  dataButtons.appendChild(syncBtn);
+  addRow.appendChild(_btn('Добавить', 'btn-secondary', async () => {
+    const name = addInput.value.trim();
+    if (!name) { showToast('Введите название'); return; }
+    if (categories.includes(name)) { showToast('Уже существует'); return; }
+    const updated = [...categories, name];
+    await _saveSetting(settings, settingKey, JSON.stringify(updated));
+    showToast(`«${name}» добавлена`);
+    renderSettings(pageContainer);
+  }));
 
-  const ratesBtn = document.createElement('button');
-  ratesBtn.className = 'btn btn-secondary';
-  ratesBtn.textContent = 'Обновить курсы';
-  ratesBtn.addEventListener('click', async () => {
-    ratesBtn.disabled = true;
-    ratesBtn.textContent = 'Обновление...';
-    try {
-      await refreshRates();
-      showToast('✓ Курсы обновлены');
-    } catch (err) {
-      showToast('✗ Ошибка: ' + err.message);
-    } finally {
-      ratesBtn.disabled = false;
-      ratesBtn.textContent = 'Обновить курсы';
-    }
-  });
-  dataButtons.appendChild(ratesBtn);
+  wrapper.appendChild(addRow);
+  return wrapper;
+}
 
-  const clearBtn = document.createElement('button');
-  clearBtn.className = 'btn btn-danger';
-  clearBtn.textContent = 'Очистить локальный кэш';
-  clearBtn.addEventListener('click', async () => {
-    // Проверяем очередь
+// ============================================================
+//  УСТАНОВКА PWA
+// ============================================================
+
+function _sectionInstall() {
+  const section = _createSection('Установка');
+
+  // iOS
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    || navigator.standalone === true;
+
+  if (isStandalone) {
+    const info = document.createElement('div');
+    info.className = 'setting-info';
+    info.textContent = '✓ Приложение установлено';
+    section.appendChild(info);
+  } else if (isIOS) {
+    const hint = document.createElement('div');
+    hint.className = 'install-hint';
+
+    const icon = document.createElement('span');
+    icon.textContent = '📤';
+    icon.style.fontSize = '24px';
+    hint.appendChild(icon);
+
+    const text = document.createElement('span');
+    text.textContent = ' Нажмите «Поделиться» → «На экран Домой» для установки';
+    hint.appendChild(text);
+
+    section.appendChild(hint);
+  } else {
+    // Android и прочие
+    const installBtn = _btn('Установить на главный экран', 'btn-primary', async () => {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const result = await deferredInstallPrompt.userChoice;
+        if (result.outcome === 'accepted') {
+          showToast('Приложение установлено!');
+        }
+        deferredInstallPrompt = null;
+      } else {
+        showToast('Установка недоступна. Откройте через Chrome → «Добавить на главный экран»');
+      }
+    });
+    section.appendChild(installBtn);
+  }
+
+  return section;
+}
+
+// ============================================================
+//  ДАННЫЕ
+// ============================================================
+
+function _sectionData(pageContainer) {
+  const section = _createSection('Данные');
+  const btns = document.createElement('div');
+  btns.className = 'settings-buttons';
+
+  btns.appendChild(_btn('Синхронизировать', 'btn-secondary', async (btn) => {
+    btn.disabled = true; btn.textContent = 'Синхронизация...';
+    try { await sync(); showToast('✓ Синхронизировано'); }
+    catch (e) { showToast('✗ ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Синхронизировать'; }
+  }));
+
+  btns.appendChild(_btn('Обновить курсы', 'btn-secondary', async (btn) => {
+    btn.disabled = true; btn.textContent = 'Обновление...';
+    try { await refreshRates(); showToast('✓ Курсы обновлены'); }
+    catch (e) { showToast('✗ ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Обновить курсы'; }
+  }));
+
+  btns.appendChild(_btn('Экспорт JSON', 'btn-secondary', async () => {
+    const data = await getActiveData();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    _downloadBlob(blob, `uchet-export-${new Date().toISOString().slice(0,10)}.json`);
+    showToast('JSON экспортирован');
+  }));
+
+  btns.appendChild(_btn('Экспорт CSV', 'btn-secondary', async () => {
+    const data = await getActiveData();
+    const csv = _opsToCSV(data.ops);
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    _downloadBlob(blob, `uchet-ops-${new Date().toISOString().slice(0,10)}.csv`);
+    showToast('CSV экспортирован');
+  }));
+
+  btns.appendChild(_btn('Очистить локальный кэш', 'btn-danger', async () => {
     const outbox = await getOutbox();
     if (outbox.length > 0) {
-      const confirmed = confirm(
-        `Есть ${outbox.length} неотправленных изменений! Они будут потеряны. Продолжить?`
-      );
-      if (!confirmed) return;
+      if (!confirm(`Есть ${outbox.length} неотправленных! Продолжить?`)) return;
     } else {
-      const confirmed = confirm('Очистить все локальные данные?');
-      if (!confirmed) return;
+      if (!confirm('Очистить все локальные данные?')) return;
     }
-
-    const stores = ['ops', 'orders', 'order_lines', 'debts', 'rates', 'settings', 'outbox'];
-    for (const store of stores) {
+    for (const store of ['ops', 'orders', 'order_lines', 'debts', 'rates', 'settings', 'outbox']) {
       await clear(store);
     }
     await setMeta('since', null);
     showToast('Кэш очищен');
-    renderSettings(container);
-  });
-  dataButtons.appendChild(clearBtn);
+    renderSettings(pageContainer);
+  }));
 
-  dataSection.appendChild(dataButtons);
-  container.appendChild(dataSection);
+  section.appendChild(btns);
+  return section;
+}
 
-  // === Секция: О приложении ===
-  const aboutSection = createSection('О приложении');
-  const version = document.createElement('div');
-  version.className = 'setting-info';
-  version.textContent = 'Версия: 1.0.0';
-  aboutSection.appendChild(version);
+async function _sectionAbout() {
+  const section = _createSection('О приложении');
+
+  const ver = document.createElement('div');
+  ver.className = 'setting-info';
+  ver.textContent = 'Версия: 1.0.0';
+  section.appendChild(ver);
 
   const since = await getMeta('since');
   const syncInfo = document.createElement('div');
   syncInfo.className = 'setting-info';
+  const fmtDT = new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
   syncInfo.textContent = since
-    ? `Последняя синхронизация: ${new Intl.DateTimeFormat('ru-RU', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit'
-      }).format(new Date(since))}`
+    ? `Последняя синхронизация: ${fmtDT.format(new Date(since))}`
     : 'Синхронизация не проводилась';
-  aboutSection.appendChild(syncInfo);
-
-  container.appendChild(aboutSection);
-}
-
-/**
- * Вспомогательная: создать секцию с заголовком
- */
-function createSection(title) {
-  const section = document.createElement('div');
-  section.className = 'settings-section';
-
-  const h3 = document.createElement('h3');
-  h3.className = 'section-title';
-  h3.textContent = title;
-  section.appendChild(h3);
+  section.appendChild(syncInfo);
 
   return section;
+}
+
+// ============================================================
+//  УТИЛИТЫ
+// ============================================================
+
+function _createSection(title) {
+  const s = document.createElement('div');
+  s.className = 'settings-section';
+  const h = document.createElement('h3');
+  h.className = 'section-title';
+  h.textContent = title;
+  s.appendChild(h);
+  return s;
+}
+
+function _field(label, type, name, attrs = {}) {
+  const g = document.createElement('div');
+  g.className = 'form-group';
+  const l = document.createElement('label');
+  l.textContent = label;
+  g.appendChild(l);
+  const i = document.createElement('input');
+  i.type = type;
+  i.name = name;
+  for (const [k, v] of Object.entries(attrs)) i.setAttribute(k, v);
+  g.appendChild(i);
+  return g;
+}
+
+function _btn(text, cls, onClick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `btn ${cls}`;
+  b.textContent = text;
+  b.addEventListener('click', () => onClick(b));
+  return b;
+}
+
+function _sv(settings, key, def) {
+  const s = settings.find(s => s.key === key);
+  return s ? s.value : def;
+}
+
+function _svJSON(settings, key, def) {
+  const s = settings.find(s => s.key === key);
+  if (!s) return def;
+  try { return JSON.parse(s.value); }
+  catch { return def; }
+}
+
+async function _saveSetting(settings, key, value) {
+  const record = { key, value };
+  await put('settings', record);
+  await addToOutbox({ sheet: 'settings', data: record });
+  scheduleSyncAfterChange();
+  // Обновляем в массиве settings тоже
+  const existing = settings.find(s => s.key === key);
+  if (existing) existing.value = value;
+  else settings.push(record);
+}
+
+function _downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function _opsToCSV(ops) {
+  const headers = ['id','type','amount','currency','date','counterparty','purpose','category','note'];
+  const lines = [headers.join(';')];
+  for (const op of ops) {
+    const row = headers.map(h => {
+      const val = String(op[h] || '').replace(/"/g, '""');
+      return `"${val}"`;
+    });
+    lines.push(row.join(';'));
+  }
+  return lines.join('\r\n');
 }
