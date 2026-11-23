@@ -8,6 +8,7 @@ import {
   calcDebtRemainder,
   calcDebtsTotal,
   calcOrderSummary,
+  calcOrdersExpected,
   calcIncomeExpenseTotals,
   calcForecast
 } from '../js/calc.js';
@@ -320,6 +321,73 @@ describe('Утилита round2', () => {
 
   it('round2(0) = 0', () => {
     assert.equal(round2(0), 0);
+  });
+});
+
+describe('Этап 4: calcOrdersExpected и calcForecast (Прогноз)', () => {
+  it('calcOrdersExpected агрегирует ожидаемые суммы активных заказов', () => {
+    const orders = [
+      { id: 'o1', name: 'Заказ 1', status: 'in_progress', price: 1000, currency: 'USD' },
+      { id: 'o2', name: 'Заказ 2', status: 'done', price: 500, currency: 'USD' }
+    ];
+    const lines = [
+      { id: 'l1', order_id: 'o1', type: 'material', plan_amount: 300, currency: 'USD' }
+    ];
+    const ops = [
+      { id: 'op1', order_id: 'o1', type: 'income', amount: 400, currency: 'USD' }
+    ];
+    const rates = [{ currency: 'USD', rate_manual: 18.2, mode: 'manual' }];
+    const expected = calcOrdersExpected(orders, lines, ops, rates, 'MDL');
+
+    // o1: expectedIncome = 1000 - 400 = 600 USD; expectedExpense = 300 USD; net = 300 USD
+    // o2: done -> 0
+    assert.equal(expected.incomeByCurrency['USD'], 600);
+    assert.equal(expected.expenseByCurrency['USD'], 300);
+    assert.equal(expected.netByCurrency['USD'], 300);
+    assert.closeTo(expected.totalIncomeBase, 600 * 18.2, 0.01);
+    assert.closeTo(expected.totalExpenseBase, 300 * 18.2, 0.01);
+    assert.closeTo(expected.totalNetBase, 300 * 18.2, 0.01);
+  });
+
+  it('calcForecast считает итоговый баланс по формуле Доступно + Мне должны − Я должен + По заказам', () => {
+    const available = { totalBase: 46980, byCurrency: { MDL: 12400, USD: 1900 } };
+    const owedToMe = { totalBase: 19600, byCurrency: { MDL: 7600, EUR: 600 } };
+    const iOwe = { totalBase: 2000, byCurrency: { MDL: 2000 } };
+    const ordersExpected = {
+      totalIncomeBase: 10920, // 600 USD * 18.2
+      totalExpenseBase: 3640,  // 200 USD * 18.2
+      incomeByCurrency: { USD: 600 },
+      expenseByCurrency: { USD: 200 }
+    };
+
+    const forecast = calcForecast(available, owedToMe, iOwe, ordersExpected);
+
+    // 46980 + 19600 - 2000 + 10920 - 3640 = 71860 MDL
+    assert.equal(forecast.totalBase, 71860);
+
+    // По валютам:
+    // MDL: 12400 + 7600 - 2000 = 18000
+    // USD: 1900 + 600 - 200 = 2300
+    // EUR: 600
+    assert.equal(forecast.byCurrency['MDL'], 18000);
+    assert.equal(forecast.byCurrency['USD'], 2300);
+    assert.equal(forecast.byCurrency['EUR'], 600);
+  });
+
+  it('calcForecast корректно определяет отрицательный прогноз (кассовый разрыв)', () => {
+    const available = { totalBase: 1000, byCurrency: { MDL: 1000 } };
+    const owedToMe = { totalBase: 0, byCurrency: {} };
+    const iOwe = { totalBase: 5000, byCurrency: { MDL: 5000 } };
+    const ordersExpected = {
+      totalIncomeBase: 0,
+      totalExpenseBase: 0,
+      incomeByCurrency: {},
+      expenseByCurrency: {}
+    };
+
+    const forecast = calcForecast(available, owedToMe, iOwe, ordersExpected);
+    assert.equal(forecast.totalBase, -4000);
+    assert.isTrue(forecast.totalBase < 0, 'Прогноз должен быть отрицательным');
   });
 });
 
