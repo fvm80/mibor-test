@@ -572,7 +572,7 @@ export async function renderOrderCard(container, params, renderId) {
       const completeBtn = document.createElement('button');
       completeBtn.type = 'button';
       completeBtn.className = 'btn btn-primary';
-      completeBtn.textContent = '✓ Завершить заказ';
+      completeBtn.textContent = 'Завершить заказ';
       completeBtn.addEventListener('click', () => {
         _completeOrder(order, summary, container);
       });
@@ -583,7 +583,7 @@ export async function renderOrderCard(container, params, renderId) {
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.className = 'btn btn-secondary';
-    copyBtn.textContent = '📋 Копировать как новый заказ';
+    copyBtn.textContent = 'Копировать как новый';
     copyBtn.addEventListener('click', () => {
       _copyOrder(order, lines);
     });
