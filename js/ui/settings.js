@@ -379,24 +379,24 @@ function _sectionData(pageContainer) {
     btn.disabled = true; btn.textContent = 'Синхронизация...';
     try { await sync(); showToast('✓ Синхронизировано'); }
     catch (e) { showToast('✗ ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = 'Синхронизировать сейчас'; }
+    finally { btn.disabled = false; btn.textContent = '🔄'; }
   }));
 
   btns.appendChild(_btn('Обновить курсы валют', 'btn-secondary', async (btn) => {
     btn.disabled = true; btn.textContent = 'Обновление...';
     try { await refreshRates(); showToast('✓ Курсы обновлены'); }
     catch (e) { showToast('✗ ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = 'Обновить курсы валют'; }
+    finally { btn.disabled = false; btn.textContent = '💱'; }
   }));
 
-  btns.appendChild(_btn('Экспорт JSON (все данные)', 'btn-secondary', async () => {
+  btns.appendChild(_btn('📄 JSON', 'btn-secondary', async () => {
     const data = await getActiveData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     _downloadBlob(blob, `uchet-backup-${new Date().toISOString().slice(0,10)}.json`);
     showToast('Резервная копия JSON сохранена');
   }));
 
-  btns.appendChild(_btn('Экспорт CSV (операции)', 'btn-secondary', async () => {
+  btns.appendChild(_btn('📄CSV опе', 'btn-secondary', async () => {
     const data = await getActiveData();
     const csv = _opsToCSV(data.ops);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
@@ -404,7 +404,7 @@ function _sectionData(pageContainer) {
     showToast('CSV с операциями сохранён');
   }));
 
-  btns.appendChild(_btn('Экспорт CSV (заказы)', 'btn-secondary', async () => {
+  btns.appendChild(_btn('📄CSV зак', 'btn-secondary', async () => {
     const data = await getActiveData();
     const csv = _ordersToCSV(data.orders);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
@@ -412,7 +412,7 @@ function _sectionData(pageContainer) {
     showToast('CSV с заказами сохранён');
   }));
 
-  btns.appendChild(_btn('Экспорт CSV (долги)', 'btn-secondary', async () => {
+  btns.appendChild(_btn('📄CSV дол', 'btn-secondary', async () => {
     const data = await getActiveData();
     const csv = _debtsToCSV(data.debts);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
@@ -420,7 +420,7 @@ function _sectionData(pageContainer) {
     showToast('CSV с долгами сохранён');
   }));
 
-  btns.appendChild(_btn('Очистить локальный кэш', 'btn-danger', async () => {
+  btns.appendChild(_btn('🗑️ кэш', 'btn-danger', async () => {
     const outbox = await getOutbox();
     if (outbox.length > 0) {
       if (!confirm(`Есть ${outbox.length} неотправленных изменений! При очистке они будут потеряны. Продолжить?`)) return;
