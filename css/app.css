@@ -160,6 +160,10 @@ ul, ol { list-style: none; }
    КОНТЕНТ
    ============================================================ */
 #app-content {
+  max-width: 480px;
+  margin-inline: auto;
+  width: 100%;
+  box-sizing: border-box;
   padding-top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 8px);
   padding-bottom: calc(var(--nav-height) + 24px + env(safe-area-inset-bottom, 0px));
   padding-left: 16px;
@@ -582,14 +586,14 @@ ul, ol { list-style: none; }
    СПИСОК ОПЕРАЦИЙ
    ============================================================ */
 .ops-list {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .date-header {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-secondary);
-  padding: 12px 0 4px;
+  padding: 10px 4px 6px;
   position: sticky;
   top: calc(var(--header-height) + env(safe-area-inset-top, 0px));
   background-color: var(--color-bg);
@@ -600,20 +604,30 @@ ul, ol { list-style: none; }
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 12px 14px;
+  background-color: #FFFFFF;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  margin-bottom: 8px;
   min-height: 48px;
   cursor: pointer;
-  transition: background-color var(--transition);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform var(--transition), box-shadow var(--transition);
 }
 
-.op-item:last-child { border-bottom: none; }
+.op-item:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.07);
+}
+
+.op-item:active {
+  transform: scale(0.99);
+}
 
 .op-indicator {
   font-size: 15px;
   font-weight: 700;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -662,8 +676,129 @@ ul, ol { list-style: none; }
 }
 
 /* ============================================================
-   ФИЛЬТРЫ (чипы)
+   ФИЛЬТРЫ ОПЕРАЦИЙ (4 кнопки в один ряд + Popover)
    ============================================================ */
+.filter-bar-container {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.filter-bar-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.filter-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 3px;
+  min-height: 50px;
+  min-width: 0;
+  background-color: #FFFFFF;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all var(--transition);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  text-align: center;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.filter-btn:hover {
+  background-color: #F8FAFC;
+}
+
+.filter-btn.is-active {
+  background-color: #EFF6FF;
+  border: 1.5px solid var(--color-primary);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.12);
+}
+
+.filter-btn.is-open {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.filter-btn-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.filter-btn.is-active .filter-btn-title {
+  color: #1E40AF;
+}
+
+.filter-btn-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  margin-top: 2px;
+}
+
+.filter-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #FFFFFF;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  padding: 6px;
+  z-index: 50;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--transition);
+}
+
+.filter-option:hover {
+  background-color: #F1F5F9;
+}
+
+.filter-option.is-selected {
+  background-color: #EFF6FF;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.filter-option-check {
+  color: var(--color-primary);
+  font-weight: 700;
+  font-size: 15px;
+}
+
 .filters-row {
   display: flex;
   flex-wrap: wrap;
@@ -672,39 +807,108 @@ ul, ol { list-style: none; }
 }
 
 /* ============================================================
-   ИТОГИ ПЕРИОДА
+   ИТОГИ ОПЕРАЦИЙ (Единая визуальная карточка)
    ============================================================ */
 .totals-card {
+  background: #FFFFFF;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   margin-bottom: 12px;
 }
 
 .totals-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
 }
 
 .totals-col {
+  padding: 10px 4px;
+  border-radius: 12px;
   text-align: center;
-}
-
-.totals-label {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  margin-bottom: 2px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .totals-amount {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.totals-col-income {
+  background-color: #ECFDF5;
+  border: 1px solid #A7F3D0;
+}
+.totals-col-income .totals-label {
+  color: #065F46;
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.totals-col-income .totals-amount {
+  color: #065F46;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-main);
+}
+
+.totals-col-expense {
+  background-color: #FEF2F2;
+  border: 1px solid #FECACA;
+}
+.totals-col-expense .totals-label {
+  color: #991B1B;
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.totals-col-expense .totals-amount {
+  color: #991B1B;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-main);
+}
+
+.totals-col-diff {
+  background-color: #F8FAFC;
+  border: 1px solid #E2E8F0;
+}
+.totals-col-diff .totals-label {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.totals-col-diff .totals-amount.text-income {
+  color: var(--color-income);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-main);
+}
+.totals-col-diff .totals-amount.text-expense {
+  color: var(--color-expense);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-main);
 }
 
 .totals-note {
   font-size: 11px;
-  color: var(--color-text-secondary);
+  color: #94A3B8;
   text-align: center;
   margin-top: 8px;
-  font-style: italic;
 }
 
 /* ============================================================
@@ -814,11 +1018,17 @@ ul, ol { list-style: none; }
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 48px;
-  padding: 0 24px;
+  min-height: 46px;
+  height: auto;
+  padding: 10px 18px;
   border-radius: var(--radius-sm);
-  font-size: 16px;
+  font-family: var(--font-main);
+  font-size: 15px;
   font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
   transition: background-color var(--transition), opacity var(--transition);
   min-width: 44px;
   flex: 1;
@@ -1158,6 +1368,26 @@ ul, ol { list-style: none; }
   display: flex;
   gap: 8px;
   margin-top: 20px;
+}
+
+.modal-buttons.flex-col {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 8px;
+}
+
+.modal-buttons.flex-col .btn {
+  width: 100%;
+  flex: none;
+  min-height: 44px;
+  height: auto;
+  padding: 11px 16px;
+  font-size: 15px;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .modal-close {
@@ -1833,15 +2063,91 @@ ul, ol { list-style: none; }
 }
 
 /* ============================================================
-   УТИЛИТЫ КНОПОК
+   УТИЛИТЫ КНОПОК И ДЕЙСТВИЙ
    ============================================================ */
 .btn-sm {
   height: 36px;
   min-height: 36px;
-  padding: 0 16px;
+  padding: 0 14px;
   font-size: 13px;
   font-weight: 600;
   border-radius: 18px;
   flex: none;
+  white-space: nowrap;
 }
+
+.order-actions {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.order-actions .btn {
+  width: 100%;
+  flex: none;
+  min-height: 46px;
+  padding: 11px 16px;
+  font-size: 15px;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* ============================================================
+   ОБЩИЕ УТИЛИТАРНЫЕ КЛАССЫ
+   ============================================================ */
+.flex-col {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+}
+
+.flex-row {
+  display: flex !important;
+  flex-direction: row !important;
+}
+
+.flex-between {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.align-start {
+  align-items: flex-start !important;
+}
+
+.gap-2 { gap: 2px !important; }
+.gap-4 { gap: 4px !important; }
+.gap-6 { gap: 6px !important; }
+.gap-8 { gap: 8px !important; }
+.gap-12 { gap: 12px !important; }
+.gap-16 { gap: 16px !important; }
+
+.mb-0 { margin-bottom: 0 !important; }
+.mb-4 { margin-bottom: 4px !important; }
+.mb-8 { margin-bottom: 8px !important; }
+.mb-12 { margin-bottom: 12px !important; }
+.mb-16 { margin-bottom: 16px !important; }
+.mb-24 { margin-bottom: 24px !important; }
+
+.mt-4 { margin-top: 4px !important; }
+.mt-8 { margin-top: 8px !important; }
+.mt-12 { margin-top: 12px !important; }
+.mt-16 { margin-top: 16px !important; }
+
+.p-12 { padding: 12px !important; }
+.p-16 { padding: 16px !important; }
+.pt-8 { padding-top: 8px !important; }
+.pt-12 { padding-top: 12px !important; }
+
+.w-full { width: 100% !important; }
+.font-xs { font-size: 11px !important; }
+.font-sm { font-size: 13px !important; }
+.font-bold { font-weight: 700 !important; }
+.border-top { border-top: 1px solid var(--color-border-subtle) !important; }
+.bg-subtle { background-color: #F8FAFC !important; }
 
