@@ -565,14 +565,14 @@ export async function renderOrderCard(container, params, renderId) {
 
     // --- КНОПКИ ДЕЙСТВИЙ НАД ЗАКАЗОМ ---
     const actionsBox = document.createElement('div');
-    actionsBox.className = 'modal-buttons flex-col gap-8 mb-24';
+    actionsBox.className = 'order-actions modal-buttons flex-col gap-8 mb-24';
 
     // 1. Завершить заказ
     if (order.status !== 'done') {
       const completeBtn = document.createElement('button');
       completeBtn.type = 'button';
       completeBtn.className = 'btn btn-primary';
-      completeBtn.textContent = 'Завершить заказ';
+      completeBtn.textContent = '✓ Завершить заказ';
       completeBtn.addEventListener('click', () => {
         _completeOrder(order, summary, container);
       });
@@ -583,7 +583,7 @@ export async function renderOrderCard(container, params, renderId) {
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.className = 'btn btn-secondary';
-    copyBtn.textContent = 'Копировать как новый';
+    copyBtn.textContent = '📋 Копировать как новый заказ';
     copyBtn.addEventListener('click', () => {
       _copyOrder(order, lines);
     });

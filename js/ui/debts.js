@@ -397,7 +397,7 @@ function _openDebtCard(debt, ops, rates, settings, fullData, pageContainer) {
     const repayBtn = document.createElement('button');
     repayBtn.type = 'button';
     repayBtn.className = 'btn btn-primary';
-    repayBtn.textContent = 'Погасить долг';
+    repayBtn.textContent = 'Погасить';
     repayBtn.addEventListener('click', () => {
       _closeModal(overlay);
       _openRepayDialog(debt, remainder, fullData, pageContainer);

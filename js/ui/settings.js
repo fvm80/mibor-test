@@ -1,18 +1,11 @@
 // settings.js — Настройки (#/settings)
-// Подключение, валюты, категории, установка PWA, данные
+// Подключение, валюты, категории, о приложении
 
-import { getMeta, setMeta, put, getAll, clear, getActiveData, getOutbox, addToOutbox } from '../db.js';
-import { ping, init, sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
+import { getMeta, setMeta, put, getActiveData, addToOutbox } from '../db.js';
+import { ping, init, sync, scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
 import { formatDateTime } from '../dates.js';
 import { getCurrentHash, isCurrentRender, nextRenderSeq } from '../router.js';
-
-// Перехватываем событие установки PWA (Android)
-let deferredInstallPrompt = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredInstallPrompt = e;
-});
 
 /**
  * Отрисовать настройки
@@ -42,12 +35,6 @@ export async function renderSettings(container, renderId) {
 
   // === Категории ===
   fragment.appendChild(_sectionCategories(settings, container));
-
-  // === Установка PWA ===
-  fragment.appendChild(_sectionInstall());
-
-  // === Данные ===
-  fragment.appendChild(_sectionData(container));
 
   // === О приложении ===
   const aboutSection = await _sectionAbout();
@@ -316,128 +303,8 @@ function _categoryList(settings, settingKey, pageContainer) {
 }
 
 // ============================================================
-//  УСТАНОВКА PWA
+//  О ПРИЛОЖЕНИИ
 // ============================================================
-
-function _sectionInstall() {
-  const section = _createSection('Установка');
-
-  // iOS
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-    || navigator.standalone === true;
-
-  if (isStandalone) {
-    const info = document.createElement('div');
-    info.className = 'setting-info';
-    info.textContent = '✓ Приложение установлено';
-    section.appendChild(info);
-  } else if (isIOS) {
-    const hint = document.createElement('div');
-    hint.className = 'install-hint';
-
-    const icon = document.createElement('span');
-    icon.textContent = '📤';
-    icon.style.fontSize = '24px';
-    hint.appendChild(icon);
-
-    const text = document.createElement('span');
-    text.textContent = ' Нажмите «Поделиться» → «На экран Домой» для установки';
-    hint.appendChild(text);
-
-    section.appendChild(hint);
-  } else {
-    // Android и прочие
-    const installBtn = _btn('Установить на главный экран', 'btn-primary', async () => {
-      if (deferredInstallPrompt) {
-        deferredInstallPrompt.prompt();
-        const result = await deferredInstallPrompt.userChoice;
-        if (result.outcome === 'accepted') {
-          showToast('Приложение установлено!');
-        }
-        deferredInstallPrompt = null;
-      } else {
-        showToast('Установка недоступна. Откройте через Chrome → «Добавить на главный экран»');
-      }
-    });
-    section.appendChild(installBtn);
-  }
-
-  return section;
-}
-
-// ============================================================
-//  ДАННЫЕ
-// ============================================================
-
-function _sectionData(pageContainer) {
-  const section = _createSection('Данные и резервные копии');
-  const btns = document.createElement('div');
-  btns.className = 'settings-buttons';
-
-  btns.appendChild(_btn('Синхронизировать сейчас', 'btn-secondary', async (btn) => {
-    btn.disabled = true; btn.textContent = 'Синхронизация...';
-    try { await sync(); showToast('✓ Синхронизировано'); }
-    catch (e) { showToast('✗ ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = '🔄'; }
-  }));
-
-  btns.appendChild(_btn('Обновить курсы валют', 'btn-secondary', async (btn) => {
-    btn.disabled = true; btn.textContent = 'Обновление...';
-    try { await refreshRates(); showToast('✓ Курсы обновлены'); }
-    catch (e) { showToast('✗ ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = '💱'; }
-  }));
-
-  btns.appendChild(_btn('📄 JSON', 'btn-secondary', async () => {
-    const data = await getActiveData();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    _downloadBlob(blob, `uchet-backup-${new Date().toISOString().slice(0,10)}.json`);
-    showToast('Резервная копия JSON сохранена');
-  }));
-
-  btns.appendChild(_btn('📄CSV опе', 'btn-secondary', async () => {
-    const data = await getActiveData();
-    const csv = _opsToCSV(data.ops);
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-    _downloadBlob(blob, `uchet-ops-${new Date().toISOString().slice(0,10)}.csv`);
-    showToast('CSV с операциями сохранён');
-  }));
-
-  btns.appendChild(_btn('📄CSV зак', 'btn-secondary', async () => {
-    const data = await getActiveData();
-    const csv = _ordersToCSV(data.orders);
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-    _downloadBlob(blob, `uchet-orders-${new Date().toISOString().slice(0,10)}.csv`);
-    showToast('CSV с заказами сохранён');
-  }));
-
-  btns.appendChild(_btn('📄CSV дол', 'btn-secondary', async () => {
-    const data = await getActiveData();
-    const csv = _debtsToCSV(data.debts);
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-    _downloadBlob(blob, `uchet-debts-${new Date().toISOString().slice(0,10)}.csv`);
-    showToast('CSV с долгами сохранён');
-  }));
-
-  btns.appendChild(_btn('🗑️ кэш', 'btn-danger', async () => {
-    const outbox = await getOutbox();
-    if (outbox.length > 0) {
-      if (!confirm(`Есть ${outbox.length} неотправленных изменений! При очистке они будут потеряны. Продолжить?`)) return;
-    } else {
-      if (!confirm('Очистить все локальные данные? Они загрузятся заново при следующей синхронизации.')) return;
-    }
-    for (const store of ['ops', 'orders', 'order_lines', 'debts', 'rates', 'settings', 'outbox']) {
-      await clear(store);
-    }
-    await setMeta('since', null);
-    showToast('Локальный кэш очищен');
-    if (getCurrentHash() === '#/settings') renderSettings(pageContainer);
-  }));
-
-  section.appendChild(btns);
-  return section;
-}
 
 async function _sectionAbout() {
   const section = _createSection('О приложении');
@@ -516,52 +383,4 @@ async function _saveSetting(settings, key, value) {
   const existing = settings.find(s => s.key === key);
   if (existing) existing.value = value;
   else settings.push(record);
-}
-
-function _downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function _opsToCSV(ops) {
-  const headers = ['id','type','amount','currency','date','counterparty','purpose','category','note','order_id','debt_id','created_at'];
-  const lines = [headers.join(';')];
-  for (const op of ops) {
-    const row = headers.map(h => {
-      const val = String(op[h] ?? '').replace(/"/g, '""');
-      return `"${val}"`;
-    });
-    lines.push(row.join(';'));
-  }
-  return lines.join('\r\n');
-}
-
-function _ordersToCSV(orders) {
-  const headers = ['id','name','client','status','price','currency','start_date','due_date','note','created_at'];
-  const lines = [headers.join(';')];
-  for (const order of orders) {
-    const row = headers.map(h => {
-      const val = String(order[h] ?? '').replace(/"/g, '""');
-      return `"${val}"`;
-    });
-    lines.push(row.join(';'));
-  }
-  return lines.join('\r\n');
-}
-
-function _debtsToCSV(debts) {
-  const headers = ['id','direction','amount','currency','date','due_date','counterparty','purpose','status','cash_moved','order_id','note','created_at'];
-  const lines = [headers.join(';')];
-  for (const debt of debts) {
-    const row = headers.map(h => {
-      const val = String(debt[h] ?? '').replace(/"/g, '""');
-      return `"${val}"`;
-    });
-    lines.push(row.join(';'));
-  }
-  return lines.join('\r\n');
 }

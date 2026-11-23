@@ -63,57 +63,168 @@ export async function renderOps(container, renderId) {
     searchRow.appendChild(searchInput);
     fragment.appendChild(searchRow);
 
-    // === Фильтры ===
-    const filtersRow = document.createElement('div');
-    filtersRow.className = 'filters-row';
+    // === Фильтры: 4 компактные кнопки в один ряд с выпадающими списками ===
+    const filterDefs = [
+      {
+        id: 'period',
+        title: 'Период',
+        options: [
+          { key: 'week', label: 'Неделя' },
+          { key: 'month', label: 'Месяц' },
+          { key: 'all', label: 'Всё' }
+        ],
+        isActive: () => filters.period !== 'all',
+        getCurrentLabel: () => {
+          if (filters.period === 'week') return 'Неделя';
+          if (filters.period === 'month') return 'Месяц';
+          return 'Всё';
+        }
+      },
+      {
+        id: 'type',
+        title: 'Тип опер.',
+        options: [
+          { key: 'all', label: 'Все' },
+          { key: 'income', label: 'Доходы' },
+          { key: 'expense', label: 'Расходы' }
+        ],
+        isActive: () => filters.type !== 'all',
+        getCurrentLabel: () => {
+          if (filters.type === 'income') return 'Доходы';
+          if (filters.type === 'expense') return 'Расходы';
+          return 'Все';
+        }
+      },
+      {
+        id: 'currency',
+        title: 'Валюта',
+        options: [
+          { key: 'all', label: 'Все' },
+          ...currencies.map(c => ({ key: c, label: c }))
+        ],
+        isActive: () => filters.currency !== 'all',
+        getCurrentLabel: () => filters.currency === 'all' ? 'Все' : filters.currency
+      },
+      {
+        id: 'category',
+        title: 'Категория',
+        options: [
+          { key: 'all', label: 'Все' },
+          ...allCategories.map(c => ({ key: c, label: c }))
+        ],
+        isActive: () => filters.category !== 'all',
+        getCurrentLabel: () => filters.category === 'all' ? 'Все' : filters.category
+      }
+    ];
 
-    // Период
-    _addChipGroup(filtersRow, [
-      { key: 'week', label: 'Неделя' },
-      { key: 'month', label: 'Месяц' },
-      { key: 'all', label: 'Всё' }
-    ], filters.period, (key) => {
-      filters.period = key;
-      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
-    });
+    const filterBarContainer = document.createElement('div');
+    filterBarContainer.className = 'filter-bar-container';
 
-    // Тип
-    _addChipGroup(filtersRow, [
-      { key: 'all', label: 'Все' },
-      { key: 'income', label: 'Доходы' },
-      { key: 'expense', label: 'Расходы' }
-    ], filters.type, (key) => {
-      filters.type = key;
-      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
-    });
+    const filterBar = document.createElement('div');
+    filterBar.className = 'filter-bar-4';
 
-    fragment.appendChild(filtersRow);
+    const dropdownPanel = document.createElement('div');
+    dropdownPanel.className = 'filter-dropdown-panel';
+    dropdownPanel.style.display = 'none';
 
-    // Вторая строка фильтров: валюта + категория
-    const filtersRow2 = document.createElement('div');
-    filtersRow2.className = 'filters-row';
+    let openFilterId = null;
+    const buttonEls = {};
 
-    // Валюта
-    _addChipGroup(filtersRow2, [
-      { key: 'all', label: 'Все' },
-      ...currencies.map(c => ({ key: c, label: c }))
-    ], filters.currency, (key) => {
-      filters.currency = key;
-      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
-    });
-
-    // Категория
-    if (allCategories.length > 0) {
-      _addChipGroup(filtersRow2, [
-        { key: 'all', label: 'Все кат.' },
-        ...allCategories.map(c => ({ key: c, label: c }))
-      ], filters.category, (key) => {
-        filters.category = key;
-        _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
-      });
+    function updateFilterButtonsUI() {
+      for (const def of filterDefs) {
+        const btn = buttonEls[def.id];
+        if (!btn) continue;
+        const active = def.isActive();
+        btn.classList.toggle('is-active', active);
+        btn.classList.toggle('is-open', openFilterId === def.id);
+        const valEl = btn.querySelector('.filter-btn-value');
+        if (valEl) valEl.textContent = def.getCurrentLabel();
+      }
     }
 
-    fragment.appendChild(filtersRow2);
+    function closeFilterDropdown() {
+      openFilterId = null;
+      dropdownPanel.style.display = 'none';
+      dropdownPanel.innerHTML = '';
+      updateFilterButtonsUI();
+    }
+
+    function toggleFilterDropdown(def) {
+      if (openFilterId === def.id) {
+        closeFilterDropdown();
+        return;
+      }
+      openFilterId = def.id;
+      dropdownPanel.innerHTML = '';
+
+      for (const opt of def.options) {
+        const isSelected = filters[def.id] === opt.key;
+        const optBtn = document.createElement('button');
+        optBtn.type = 'button';
+        optBtn.className = 'filter-option' + (isSelected ? ' is-selected' : '');
+
+        const optText = document.createElement('span');
+        optText.textContent = opt.label;
+        optBtn.appendChild(optText);
+
+        if (isSelected) {
+          const check = document.createElement('span');
+          check.className = 'filter-option-check';
+          check.textContent = '✓';
+          optBtn.appendChild(check);
+        }
+
+        optBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          filters[def.id] = opt.key;
+          closeFilterDropdown();
+          _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
+        });
+
+        dropdownPanel.appendChild(optBtn);
+      }
+
+      dropdownPanel.style.display = 'block';
+      updateFilterButtonsUI();
+    }
+
+    // Создаём 4 кнопки в один ряд
+    for (const def of filterDefs) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'filter-btn' + (def.isActive() ? ' is-active' : '');
+
+      const titleEl = document.createElement('span');
+      titleEl.className = 'filter-btn-title';
+      titleEl.textContent = def.title;
+      btn.appendChild(titleEl);
+
+      const valEl = document.createElement('span');
+      valEl.className = 'filter-btn-value';
+      valEl.textContent = def.getCurrentLabel();
+      btn.appendChild(valEl);
+
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFilterDropdown(def);
+      });
+
+      buttonEls[def.id] = btn;
+      filterBar.appendChild(btn);
+    }
+
+    filterBarContainer.appendChild(filterBar);
+    filterBarContainer.appendChild(dropdownPanel);
+
+    // Закрытие при клике снаружи
+    const onDocClick = (e) => {
+      if (!filterBarContainer.contains(e.target)) {
+        closeFilterDropdown();
+      }
+    };
+    document.addEventListener('click', onDocClick);
+
+    fragment.appendChild(filterBarContainer);
 
     // === Контейнер для списка (обновляется при фильтрации) ===
     const listContainer = document.createElement('div');
@@ -198,9 +309,9 @@ function _renderList(container, ops, rates, settings, baseCurrency, currencies, 
   const totalsGrid = document.createElement('div');
   totalsGrid.className = 'totals-grid';
 
-  totalsGrid.appendChild(_createTotalsCol('Доходы', totals.income.totalBase, baseCurrency, 'text-income'));
-  totalsGrid.appendChild(_createTotalsCol('Расходы', totals.expense.totalBase, baseCurrency, 'text-expense'));
-  totalsGrid.appendChild(_createTotalsCol('Разница', totals.diff.totalBase, baseCurrency, totals.diff.totalBase >= 0 ? 'text-income' : 'text-expense'));
+  totalsGrid.appendChild(_createTotalsCol('Доходы', totals.income.totalBase, baseCurrency, 'income'));
+  totalsGrid.appendChild(_createTotalsCol('Расходы', totals.expense.totalBase, baseCurrency, 'expense'));
+  totalsGrid.appendChild(_createTotalsCol('Разница', totals.diff.totalBase, baseCurrency, 'diff', totals.diff.totalBase >= 0 ? 'text-income' : 'text-expense'));
 
   totalsCard.appendChild(totalsGrid);
 
@@ -529,15 +640,15 @@ function _createOpItem(op, container, settings, orders = []) {
   return item;
 }
 
-function _createTotalsCol(label, value, currency, colorClass) {
+function _createTotalsCol(label, value, currency, type, diffClass = '') {
   const col = document.createElement('div');
-  col.className = 'totals-col';
+  col.className = `totals-col totals-col-${type}`;
   const lbl = document.createElement('div');
   lbl.className = 'totals-label';
   lbl.textContent = label;
   col.appendChild(lbl);
   const amt = document.createElement('div');
-  amt.className = `totals-amount amount ${colorClass}`;
+  amt.className = `totals-amount amount ${diffClass}`.trim();
   amt.textContent = `${fmtAmount.format(value)} ${currency}`;
   col.appendChild(amt);
   return col;
