@@ -82,7 +82,7 @@ export async function renderHome(container, renderId) {
 
     const forecastTitle = document.createElement('span');
     forecastTitle.className = 'card-label mb-0';
-    forecastTitle.textContent = 'Прогноз';
+    forecastTitle.textContent = 'Прогноз  ';
     forecastTop.appendChild(forecastTitle);
 
     const forecastAmount = document.createElement('span');
