@@ -46,9 +46,6 @@ export async function renderSettings(container, renderId) {
   // === Установка PWA ===
   fragment.appendChild(_sectionInstall());
 
-  // === Оформление (Тема) ===
-  fragment.appendChild(_sectionTheme(container));
-
   // === Данные ===
   fragment.appendChild(_sectionData(container));
 
@@ -366,45 +363,6 @@ function _sectionInstall() {
     section.appendChild(installBtn);
   }
 
-  return section;
-}
-
-// ============================================================
-//  ОФОРМЛЕНИЕ (ТЕМА)
-// ============================================================
-
-function _sectionTheme(pageContainer) {
-  const section = _createSection('Тема оформления');
-  const row = document.createElement('div');
-  row.className = 'chips-row';
-
-  const currentTheme = localStorage.getItem('uchet-theme') || 'auto';
-
-  const themes = [
-    { key: 'auto', label: 'Авто (как в системе)' },
-    { key: 'light', label: 'Светлая' },
-    { key: 'dark', label: 'Тёмная' }
-  ];
-
-  for (const t of themes) {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip' + (currentTheme === t.key ? ' active' : '');
-    chip.textContent = t.label;
-    chip.addEventListener('click', () => {
-      localStorage.setItem('uchet-theme', t.key);
-      if (t.key === 'auto') {
-        document.documentElement.removeAttribute('data-theme');
-      } else {
-        document.documentElement.setAttribute('data-theme', t.key);
-      }
-      showToast(`Выбрана тема: ${t.label}`);
-      if (getCurrentHash() === '#/settings') renderSettings(pageContainer);
-    });
-    row.appendChild(chip);
-  }
-
-  section.appendChild(row);
   return section;
 }
 

@@ -61,7 +61,7 @@ export async function renderHome(container, renderId) {
 
     // === Главная карточка ===
     const mainCard = document.createElement('div');
-    mainCard.className = 'card main-card';
+    mainCard.className = 'card main-card card-balance';
 
     const availLabel = document.createElement('div');
     availLabel.className = 'card-label';
@@ -690,7 +690,11 @@ function _createRatesSection(currencies, rates, baseCurrency) {
 
 function _createTile(title, data, baseCurrency, rates) {
   const tile = document.createElement('div');
-  tile.className = 'tile';
+  let tileClass = 'tile';
+  if (title === 'Доступно') tileClass += ' tile-available';
+  else if (title === 'Мне должны') tileClass += ' tile-owed-to-me';
+  else if (title === 'Я должен') tileClass += ' tile-i-owe';
+  tile.className = tileClass;
 
   const tileTitle = document.createElement('div');
   tileTitle.className = 'tile-title';
@@ -742,7 +746,7 @@ function _createTile(title, data, baseCurrency, rates) {
 
 function _createOrdersTile(ordersExpected, baseCurrency, rates) {
   const tile = document.createElement('div');
-  tile.className = 'tile';
+  tile.className = 'tile tile-orders';
 
   const tileTitle = document.createElement('div');
   tileTitle.className = 'tile-title';

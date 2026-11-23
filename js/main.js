@@ -80,12 +80,10 @@ async function initApp() {
     // Открываем базу данных
     await openDB();
 
-    // Применяем тему оформления
+    // Очищаем атрибуты тем оформления при переходе на единую тему
     try {
-      const savedTheme = localStorage.getItem('uchet-theme') || 'auto';
-      if (savedTheme && savedTheme !== 'auto') {
-        document.documentElement.setAttribute('data-theme', savedTheme);
-      }
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.removeItem('uchet-theme');
     } catch (_) {}
 
     appContent = document.getElementById('app-content');
