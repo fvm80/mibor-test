@@ -2340,6 +2340,17 @@ ul, ol { list-style: none; }
   margin-top: 3px;
 }
 
+.purchase-item-note {
+  font-size: 11px;
+  color: #475569;
+  background: #F1F5F9;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-top: 5px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 .purchase-total-row {
   padding: 10px 14px;
   background: #F8FAFC;
