@@ -38,6 +38,10 @@ const STATUS_BADGES = {
 // Состояние фильтра списка заказов: 'active' | 'done' | 'all'
 let currentOrderFilter = 'active';
 
+// Режим выбора заказов для списка закупок
+let purchaseSelectMode = false;
+let selectedOrderIds = new Set();
+
 // ============================================================
 //  1. СПИСОК ЗАКАЗОВ (#/orders)
 // ============================================================
@@ -61,7 +65,7 @@ export async function renderOrders(container, renderId) {
 
     const fragment = document.createDocumentFragment();
 
-    // === Панель управления: Фильтр и кнопка «+ Новый заказ» ===
+    // === Панель управления: Фильтр и кнопки «Закупки», «+ Новый заказ» ===
     const controlRow = document.createElement('div');
     controlRow.className = 'orders-control-row';
 
@@ -100,15 +104,31 @@ export async function renderOrders(container, renderId) {
 
     controlRow.appendChild(filterGroup);
 
+    const actionsGroup = document.createElement('div');
+    actionsGroup.className = 'flex-row gap-8 align-center';
+
+    const purchaseBtn = document.createElement('button');
+    purchaseBtn.type = 'button';
+    purchaseBtn.className = 'btn btn-secondary btn-sm';
+    purchaseBtn.textContent = '🛒 Закупки';
+    purchaseBtn.title = 'Сформировать общий список закупок';
+    purchaseBtn.addEventListener('click', () => {
+      purchaseSelectMode = true;
+      selectedOrderIds.clear();
+      renderOrders(container);
+    });
+    actionsGroup.appendChild(purchaseBtn);
+
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'btn btn-primary btn-sm';
-    addBtn.textContent = '+ Новый заказ';
+    addBtn.textContent = '+ Заказ';
     addBtn.addEventListener('click', () => {
       _openNewOrderDialog(settings, data, container);
     });
-    controlRow.appendChild(addBtn);
+    actionsGroup.appendChild(addBtn);
 
+    controlRow.appendChild(actionsGroup);
     fragment.appendChild(controlRow);
 
     // === Фильтрация заказов ===
@@ -117,6 +137,76 @@ export async function renderOrders(container, renderId) {
       filteredOrders = filteredOrders.filter(o => o.status === 'planned' || o.status === 'in_progress');
     } else if (currentOrderFilter === 'done') {
       filteredOrders = filteredOrders.filter(o => o.status === 'done' || o.status === 'cancelled');
+    }
+
+    // === Панель режима выбора для закупок ===
+    if (purchaseSelectMode) {
+      const selBar = document.createElement('div');
+      selBar.className = 'purchase-select-bar card mb-12';
+
+      const selInfo = document.createElement('div');
+      selInfo.className = 'purchase-select-info';
+
+      const selTitle = document.createElement('div');
+      selTitle.className = 'font-bold font-sm';
+      selTitle.textContent = 'Выбор заказов для закупок';
+      selInfo.appendChild(selTitle);
+
+      const selCount = document.createElement('div');
+      selCount.className = 'text-secondary font-xs';
+      selCount.textContent = `Выбрано: ${selectedOrderIds.size} из ${filteredOrders.length}`;
+      selInfo.appendChild(selCount);
+      selBar.appendChild(selInfo);
+
+      const selActions = document.createElement('div');
+      selActions.className = 'flex-row gap-8';
+
+      // Выбрать все / снять все
+      const allSelected = filteredOrders.length > 0 && filteredOrders.every(o => selectedOrderIds.has(o.id));
+      const toggleAllBtn = document.createElement('button');
+      toggleAllBtn.type = 'button';
+      toggleAllBtn.className = 'btn btn-secondary btn-sm';
+      toggleAllBtn.textContent = allSelected ? 'Снять все' : 'Все';
+      toggleAllBtn.addEventListener('click', () => {
+        if (allSelected) {
+          selectedOrderIds.clear();
+        } else {
+          filteredOrders.forEach(o => selectedOrderIds.add(o.id));
+        }
+        renderOrders(container);
+      });
+      selActions.appendChild(toggleAllBtn);
+
+      // Кнопка отмены
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn btn-secondary btn-sm';
+      cancelBtn.textContent = 'Отмена';
+      cancelBtn.addEventListener('click', () => {
+        purchaseSelectMode = false;
+        selectedOrderIds.clear();
+        renderOrders(container);
+      });
+      selActions.appendChild(cancelBtn);
+
+      // Кнопка Сформировать
+      const buildBtn = document.createElement('button');
+      buildBtn.type = 'button';
+      buildBtn.className = 'btn btn-primary btn-sm';
+      buildBtn.textContent = `Сформировать (${selectedOrderIds.size})`;
+      if (selectedOrderIds.size === 0) buildBtn.disabled = true;
+      buildBtn.addEventListener('click', () => {
+        const chosen = orders.filter(o => selectedOrderIds.has(o.id));
+        if (chosen.length === 0) {
+          showToast('Выберите хотя бы один заказ');
+          return;
+        }
+        _openPurchaseListDialog(chosen, data, container);
+      });
+      selActions.appendChild(buildBtn);
+
+      selBar.appendChild(selActions);
+      fragment.appendChild(selBar);
     }
 
     // Сортировка: сначала просроченные активные, затем по дате создания / начала (свежие сверху)
@@ -142,8 +232,26 @@ export async function renderOrders(container, renderId) {
         : (currentOrderFilter === 'done' ? 'Нет завершённых заказов' : 'Заказов пока нет');
       list.appendChild(empty);
     } else {
+      const onToggle = (orderId) => {
+        if (selectedOrderIds.has(orderId)) {
+          selectedOrderIds.delete(orderId);
+        } else {
+          selectedOrderIds.add(orderId);
+        }
+        renderOrders(container);
+      };
+
       for (const order of filteredOrders) {
-        list.appendChild(_createOrderListItem(order, order_lines, ops, rates, baseCurrency));
+        list.appendChild(_createOrderListItem(
+          order,
+          order_lines,
+          ops,
+          rates,
+          baseCurrency,
+          purchaseSelectMode,
+          selectedOrderIds.has(order.id),
+          onToggle
+        ));
       }
     }
 
@@ -170,9 +278,9 @@ export async function renderOrders(container, renderId) {
 /**
  * Карточка заказа в списке
  */
-function _createOrderListItem(order, orderLines, ops, rates, baseCurrency) {
+function _createOrderListItem(order, orderLines, ops, rates, baseCurrency, isSelectMode = false, isSelected = false, onToggle = null) {
   const item = document.createElement('div');
-  item.className = 'order-item card';
+  item.className = 'order-item card' + (isSelected ? ' order-item-selected' : '');
 
   const summary = calcOrderSummary(order, orderLines, ops, rates, baseCurrency);
   const cur = order.currency;
@@ -182,6 +290,13 @@ function _createOrderListItem(order, orderLines, ops, rates, baseCurrency) {
   // 1. Верхняя строка: Название + статус
   const topRow = document.createElement('div');
   topRow.className = 'order-top-row';
+
+  if (isSelectMode) {
+    const checkEl = document.createElement('div');
+    checkEl.className = 'order-checkbox' + (isSelected ? ' checked' : '');
+    checkEl.innerHTML = isSelected ? '✓' : '';
+    topRow.appendChild(checkEl);
+  }
 
   const titleEl = document.createElement('span');
   titleEl.className = 'order-title';
@@ -261,9 +376,13 @@ function _createOrderListItem(order, orderLines, ops, rates, baseCurrency) {
 
   item.appendChild(botRow);
 
-  // Клик открывает детальную карточку
+  // Клик открывает детальную карточку или переключает выбор
   item.addEventListener('click', () => {
-    navigate(`#/orders/${order.id}`);
+    if (isSelectMode) {
+      if (onToggle) onToggle(order.id);
+    } else {
+      navigate(`#/orders/${order.id}`);
+    }
   });
 
   return item;
@@ -566,6 +685,16 @@ export async function renderOrderCard(container, params, renderId) {
     // --- КНОПКИ ДЕЙСТВИЙ НАД ЗАКАЗОМ ---
     const actionsBox = document.createElement('div');
     actionsBox.className = 'order-actions modal-buttons flex-col gap-8 mb-24';
+
+    // 0. Список закупок для этого заказа
+    const purchaseBtn = document.createElement('button');
+    purchaseBtn.type = 'button';
+    purchaseBtn.className = 'btn btn-secondary';
+    purchaseBtn.textContent = '🛒 Список закупок к заказу';
+    purchaseBtn.addEventListener('click', () => {
+      _openPurchaseListDialog([order], data, container);
+    });
+    actionsBox.appendChild(purchaseBtn);
 
     // 1. Завершить заказ
     if (order.status !== 'done') {
@@ -1790,6 +1919,396 @@ async function _copyOrder(order, lines) {
 
   showToast('Заказ скопирован');
   navigate(`#/orders/${newOrderId}`);
+}
+
+// ============================================================
+//  СПИСОК ЗАКУПОК (Агрегация и экспорт в WhatsApp)
+// ============================================================
+
+/**
+ * Копирование текста в буфер обмена с fallback
+ */
+async function _copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) {}
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.style.top = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch (e) {
+    ok = false;
+  }
+  ta.remove();
+  return ok;
+}
+
+/**
+ * Формирование форматированного текста списка закупок для WhatsApp
+ */
+function _buildWhatsAppText(selectedOrders, groupsByType, totalSum, currency) {
+  const CATEGORY_ICONS = {
+    material: '📦 Материалы',
+    service: '🔧 Услуги подрядчиков',
+    overhead: '⚡ Накладные расходы',
+    other: '📌 Прочее'
+  };
+
+  const lines = [];
+  lines.push('🛒 *Список закупок*');
+  const orderNames = selectedOrders.map(o => o.name || 'Заказ').join(', ');
+  lines.push(`Заказы: ${orderNames}`);
+  lines.push('──────────────────────');
+
+  let totalItemsCount = 0;
+
+  for (const catKey of ['material', 'service', 'overhead', 'other']) {
+    const items = groupsByType[catKey];
+    if (!items || items.length === 0) continue;
+
+    lines.push('');
+    lines.push(`*${CATEGORY_ICONS[catKey] || catKey}:*`);
+
+    for (const item of items) {
+      totalItemsCount++;
+      const mark = item.checked ? '✅' : '▫️';
+      let qtyPart = '';
+      if (item.hasQty) {
+        qtyPart = ` — ${item.totalRemainQty || item.totalPlanQty} ${item.unit || 'шт'}`;
+      }
+      let amtPart = '';
+      if (item.totalRemainAmt > 0) {
+        amtPart = ` (~${fmtAmount.format(item.totalRemainAmt)} ${item.currency})`;
+      }
+      let orderPart = '';
+      if (selectedOrders.length > 1) {
+        orderPart = ` [${Array.from(item.orderNames).join(', ')}]`;
+      }
+      lines.push(`${mark} ${item.name}${qtyPart}${amtPart}${orderPart}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('──────────────────────');
+  lines.push(`Всего позиций: ${totalItemsCount}`);
+  if (totalSum > 0) {
+    lines.push(`Примерный бюджет: ~${fmtAmount.format(totalSum)} ${currency}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Диалог формирования списка закупок
+ */
+function _openPurchaseListDialog(selectedOrders, fullData, pageContainer) {
+  const { order_lines, ops, rates, settings } = fullData;
+  const baseCurrency = _getSetting(settings, 'base_currency', 'MDL');
+
+  const selectedOrderIdsSet = new Set(selectedOrders.map(o => o.id));
+  const orderMap = new Map(selectedOrders.map(o => [o.id, o]));
+
+  // Предварительно считаем факт для каждого заказа
+  const summaryMap = new Map();
+  for (const order of selectedOrders) {
+    summaryMap.set(order.id, calcOrderSummary(order, order_lines, ops, rates, baseCurrency));
+  }
+
+  // Собираем и группируем позиции
+  const CATEGORY_KEYS = ['material', 'service', 'overhead', 'other'];
+  const groupsByType = {
+    material: [],
+    service: [],
+    overhead: [],
+    other: []
+  };
+
+  const aggMap = new Map();
+
+  for (const line of order_lines) {
+    if (line.deleted) continue;
+    if (!selectedOrderIdsSet.has(line.order_id)) continue;
+    if (line.type === 'labor_own') continue;
+
+    const order = orderMap.get(line.order_id);
+    if (!order) continue;
+
+    const summary = summaryMap.get(order.id);
+    const factAmt = (summary && summary.factByLine && summary.factByLine[line.id]) || 0;
+    const planAmt = parseFloat(line.plan_amount) || 0;
+    const remainAmt = Math.max(0, planAmt - factAmt);
+
+    const planQty = parseFloat(line.qty) || 0;
+    let remainQty = planQty;
+    if (planQty > 0 && planAmt > 0) {
+      if (factAmt >= planAmt) {
+        remainQty = 0;
+      } else {
+        remainQty = Math.round(planQty * (remainAmt / planAmt) * 100) / 100;
+      }
+    }
+
+    const normType = groupsByType[line.type] ? line.type : 'other';
+    const normName = (line.name || 'Без названия').trim();
+    const normUnit = (line.unit || '').trim();
+    const key = `${normType}:::${normName.toLowerCase()}:::${normUnit.toLowerCase()}`;
+
+    if (!aggMap.has(key)) {
+      aggMap.set(key, {
+        id: line.id,
+        type: normType,
+        name: normName,
+        unit: normUnit,
+        totalPlanQty: 0,
+        totalRemainQty: 0,
+        hasQty: false,
+        totalPlanAmt: 0,
+        totalRemainAmt: 0,
+        currency: line.currency || order.currency,
+        orderNames: new Set(),
+        checked: false
+      });
+    }
+
+    const item = aggMap.get(key);
+    if (planQty > 0) {
+      item.hasQty = true;
+      item.totalPlanQty += planQty;
+      item.totalRemainQty += remainQty;
+    }
+    item.totalPlanAmt += planAmt;
+    item.totalRemainAmt += remainAmt;
+    item.orderNames.add(order.name || 'Заказ');
+  }
+
+  // Распределяем по категориям
+  for (const item of aggMap.values()) {
+    groupsByType[item.type].push(item);
+  }
+
+  // Сортировка внутри категорий
+  for (const t of CATEGORY_KEYS) {
+    groupsByType[t].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  }
+
+  const allItems = Array.from(aggMap.values());
+  const totalCount = allItems.length;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const dialog = document.createElement('div');
+  dialog.className = 'modal-dialog modal-wide purchase-modal';
+
+  // Крестик закрытия
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'modal-close';
+  closeBtn.textContent = '×';
+  closeBtn.setAttribute('aria-label', 'Закрыть');
+  closeBtn.addEventListener('click', () => _closeModal(overlay));
+  dialog.appendChild(closeBtn);
+
+  // Заголовок
+  const title = document.createElement('h3');
+  title.className = 'modal-title';
+  title.textContent = '🛒 Список закупок';
+  dialog.appendChild(title);
+
+  const orderNamesList = selectedOrders.map(o => o.name || 'Заказ').join(', ');
+  const subTitle = document.createElement('div');
+  subTitle.className = 'purchase-modal-sub text-secondary font-xs mb-12';
+  subTitle.textContent = `Заказы (${selectedOrders.length}): ${orderNamesList}`;
+  dialog.appendChild(subTitle);
+
+  // Если позиций нет
+  if (totalCount === 0) {
+    const emptyMsg = document.createElement('p');
+    emptyMsg.className = 'placeholder-text my-24';
+    emptyMsg.textContent = 'В выбранных заказах нет плановых позиций (материалов, услуг или накладных расходов).';
+    dialog.appendChild(emptyMsg);
+
+    const closeBottomBtn = document.createElement('button');
+    closeBottomBtn.type = 'button';
+    closeBottomBtn.className = 'btn btn-secondary w-full mt-16';
+    closeBottomBtn.textContent = 'Закрыть';
+    closeBottomBtn.addEventListener('click', () => _closeModal(overlay));
+    dialog.appendChild(closeBottomBtn);
+
+    overlay.appendChild(dialog);
+    overlay.addEventListener('click', e => { if (e.target === overlay) _closeModal(overlay); });
+    document.body.appendChild(overlay);
+    overlay.offsetHeight;
+    overlay.classList.add('visible');
+    return;
+  }
+
+  // Фильтр: Все / Только остаток
+  let showOnlyRemaining = false;
+
+  const filterWrap = document.createElement('div');
+  filterWrap.className = 'purchase-filters flex-row gap-8 mb-12';
+
+  const chipAll = document.createElement('button');
+  chipAll.type = 'button';
+  chipAll.className = 'chip active';
+  chipAll.textContent = `Все (${totalCount})`;
+
+  const remainingCount = allItems.filter(i => (i.hasQty ? i.totalRemainQty > 0 : i.totalRemainAmt > 0)).length;
+  const chipRemain = document.createElement('button');
+  chipRemain.type = 'button';
+  chipRemain.className = 'chip';
+  chipRemain.textContent = `К закупке (${remainingCount})`;
+
+  chipAll.addEventListener('click', () => {
+    showOnlyRemaining = false;
+    chipAll.classList.add('active');
+    chipRemain.classList.remove('active');
+    _renderItems();
+  });
+
+  chipRemain.addEventListener('click', () => {
+    showOnlyRemaining = true;
+    chipRemain.classList.add('active');
+    chipAll.classList.remove('active');
+    _renderItems();
+  });
+
+  filterWrap.appendChild(chipAll);
+  filterWrap.appendChild(chipRemain);
+  dialog.appendChild(filterWrap);
+
+  // Контейнер списка позиций
+  const itemsContainer = document.createElement('div');
+  itemsContainer.className = 'purchase-items-container';
+  dialog.appendChild(itemsContainer);
+
+  function _renderItems() {
+    itemsContainer.innerHTML = '';
+
+    for (const catKey of CATEGORY_KEYS) {
+      let catItems = groupsByType[catKey];
+      if (showOnlyRemaining) {
+        catItems = catItems.filter(i => (i.hasQty ? i.totalRemainQty > 0 : i.totalRemainAmt > 0));
+      }
+      if (catItems.length === 0) continue;
+
+      const catHeader = document.createElement('div');
+      catHeader.className = 'purchase-cat-header';
+      catHeader.textContent = `${TYPE_NAMES[catKey] || catKey} (${catItems.length})`;
+      itemsContainer.appendChild(catHeader);
+
+      for (const item of catItems) {
+        const row = document.createElement('div');
+        row.className = 'purchase-item-row' + (item.checked ? ' is-done' : '');
+
+        // Чекбокс отметки (куплено)
+        const check = document.createElement('div');
+        check.className = 'purchase-item-check' + (item.checked ? ' checked' : '');
+        check.innerHTML = item.checked ? '✓' : '';
+        row.appendChild(check);
+
+        // Инфо
+        const body = document.createElement('div');
+        body.className = 'purchase-item-body';
+
+        const nameLine = document.createElement('div');
+        nameLine.className = 'purchase-item-name';
+        nameLine.textContent = item.name;
+
+        if (selectedOrders.length > 1) {
+          const ordBadge = document.createElement('span');
+          ordBadge.className = 'purchase-order-badge';
+          ordBadge.textContent = Array.from(item.orderNames).join(', ');
+          nameLine.appendChild(ordBadge);
+        }
+        body.appendChild(nameLine);
+
+        // Количество и сумма
+        const metaLine = document.createElement('div');
+        metaLine.className = 'purchase-item-meta';
+
+        let qtyStr = '';
+        if (item.hasQty) {
+          if (item.totalRemainQty !== item.totalPlanQty && item.totalPlanQty > 0) {
+            qtyStr = `${item.totalRemainQty} из ${item.totalPlanQty} ${item.unit || 'шт'}`;
+          } else {
+            qtyStr = `${item.totalRemainQty || item.totalPlanQty} ${item.unit || 'шт'}`;
+          }
+        }
+
+        const amtStr = item.totalRemainAmt > 0
+          ? `~${fmtAmount.format(item.totalRemainAmt)} ${item.currency}`
+          : 'Куплено';
+
+        metaLine.textContent = qtyStr ? `${qtyStr} · ${amtStr}` : amtStr;
+        body.appendChild(metaLine);
+
+        row.appendChild(body);
+
+        // Клик по строке переключает чекбокс (куплено)
+        row.addEventListener('click', () => {
+          item.checked = !item.checked;
+          _renderItems();
+        });
+
+        itemsContainer.appendChild(row);
+      }
+    }
+  }
+
+  _renderItems();
+
+  // Итог и кнопка копирования для WhatsApp
+  const footer = document.createElement('div');
+  footer.className = 'purchase-modal-footer mt-16';
+
+  const totalRemainSum = allItems.reduce((acc, i) => acc + (i.totalRemainAmt || 0), 0);
+  const curSymbol = allItems[0] ? allItems[0].currency : baseCurrency;
+
+  const totalSummary = document.createElement('div');
+  totalSummary.className = 'purchase-total-row flex-between align-center mb-12';
+  totalSummary.innerHTML = `
+    <span class="font-bold">Всего к закупке:</span>
+    <span class="font-bold amount">${fmtAmount.format(totalRemainSum)} ${curSymbol}</span>
+  `;
+  footer.appendChild(totalSummary);
+
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'btn btn-primary w-full purchase-copy-btn';
+  copyBtn.textContent = '📋 Скопировать список (WhatsApp)';
+  copyBtn.addEventListener('click', async () => {
+    const text = _buildWhatsAppText(selectedOrders, groupsByType, totalRemainSum, curSymbol);
+    const ok = await _copyToClipboard(text);
+    if (ok) {
+      showToast('Список скопирован для WhatsApp!');
+    } else {
+      showToast('Не удалось скопировать в буфер');
+    }
+  });
+  footer.appendChild(copyBtn);
+
+  dialog.appendChild(footer);
+
+  overlay.appendChild(dialog);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) _closeModal(overlay);
+  });
+
+  document.body.appendChild(overlay);
+  overlay.offsetHeight;
+  overlay.classList.add('visible');
 }
 
 // ============================================================
