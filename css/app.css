@@ -831,19 +831,12 @@ ul, ol { list-style: none; }
 #toast {
   position: fixed;
   bottom: calc(var(--nav-height) + 16px + env(safe-area-inset-bottom, 0px));
-  left: 16px;
-  right: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 448px;
   z-index: 300;
   pointer-events: none;
-}
-
-@media (min-width: 481px) {
-  #toast {
-    max-width: 448px;
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-  }
 }
 
 .toast-item {
