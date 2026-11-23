@@ -397,7 +397,7 @@ function _openDebtCard(debt, ops, rates, settings, fullData, pageContainer) {
     const repayBtn = document.createElement('button');
     repayBtn.type = 'button';
     repayBtn.className = 'btn btn-primary';
-    repayBtn.textContent = 'Погасить';
+    repayBtn.textContent = 'Погасить долг';
     repayBtn.addEventListener('click', () => {
       _closeModal(overlay);
       _openRepayDialog(debt, remainder, fullData, pageContainer);
@@ -407,7 +407,7 @@ function _openDebtCard(debt, ops, rates, settings, fullData, pageContainer) {
     const writeOffBtn = document.createElement('button');
     writeOffBtn.type = 'button';
     writeOffBtn.className = 'btn btn-secondary';
-    writeOffBtn.textContent = 'Закрыть без оплаты (списать)';
+    writeOffBtn.textContent = 'Закрыть без оплаты';
     writeOffBtn.addEventListener('click', async () => {
       if (!confirm(`Списать оставшийся долг ${fmtAmount.format(remainder)} ${debt.currency}? Долг перестанет учитываться в балансах.`)) return;
       debt.status = 'written_off';
