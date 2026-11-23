@@ -200,7 +200,7 @@ function _renderList(container, ops, rates, settings, baseCurrency, currencies, 
 
   totalsGrid.appendChild(_createTotalsCol('Доходы', totals.income.totalBase, baseCurrency, 'text-income'));
   totalsGrid.appendChild(_createTotalsCol('Расходы', totals.expense.totalBase, baseCurrency, 'text-expense'));
-  totalsGrid.appendChild(_createTotalsCol('Разница', totals.diff.totalBase, baseCurrency, ''));
+  totalsGrid.appendChild(_createTotalsCol('Разница', totals.diff.totalBase, baseCurrency, totals.diff.totalBase >= 0 ? 'text-income' : 'text-expense'));
 
   totalsCard.appendChild(totalsGrid);
 

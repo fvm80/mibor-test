@@ -69,7 +69,7 @@ export async function renderDebts(container, renderId) {
     const debtsTotal = calcDebtsTotal(debts, ops, rates, currentDirection, baseCurrency);
 
     const summaryCard = document.createElement('div');
-    summaryCard.className = 'card main-card mb-12';
+    summaryCard.className = 'card main-card mb-12 ' + (currentDirection === 'owed_to_me' ? 'card-debts-owed' : 'card-debts-owe');
 
     const sumLabel = document.createElement('div');
     sumLabel.className = 'card-label';
