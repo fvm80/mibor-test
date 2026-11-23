@@ -1,5 +1,5 @@
 // home.js — Главная страница (#/home)
-// Курсы с диалогом, доступно, плитки, последние операции, pull-to-refresh
+// Курсы с диалогом, доступно, плитки, последние операции
 
 import { getActiveData, put, addToOutbox } from '../db.js';
 import { calcAvailable, calcIncomeExpenseTotals, calcDebtsTotal, calcDebtRemainder, calcOrderSummary, calcOrdersExpected, calcForecast } from '../calc.js';
@@ -14,10 +14,6 @@ const fmtAmount = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
-
-// Хранилище для pull-to-refresh
-let touchStartY = 0;
-let isPulling = false;
 
 /**
  * Отрисовать главную страницу
@@ -40,13 +36,6 @@ export async function renderHome(container, renderId) {
     const currencies = _getSettingJSON(settings, 'currencies', ['MDL', 'USD', 'EUR']);
 
     const fragment = document.createDocumentFragment();
-
-    // === Pull-to-refresh индикатор ===
-    const pullIndicator = document.createElement('div');
-    pullIndicator.className = 'pull-indicator hidden';
-    pullIndicator.id = 'pull-indicator';
-    pullIndicator.textContent = '↓ Потяните для обновления';
-    fragment.appendChild(pullIndicator);
 
     // === Секция курсов ===
     const ratesSection = _createRatesSection(currencies, rates, baseCurrency);
@@ -354,9 +343,6 @@ export async function renderHome(container, renderId) {
     container.innerHTML = '';
     container.appendChild(fragment);
 
-    // Настроить pull-to-refresh
-    _setupPullToRefresh(container);
-
   } catch (err) {
     if (!isCurrentRender(thisRender)) return;
     const currentHash = getCurrentHash();
@@ -569,52 +555,6 @@ function _openRateDialog(currency, rates, baseCurrency) {
 function _closeModal(overlay) {
   overlay.classList.remove('visible');
   setTimeout(() => overlay.remove(), 300);
-}
-
-// ============================================================
-//  PULL-TO-REFRESH
-// ============================================================
-
-function _setupPullToRefresh(container) {
-  const indicator = document.getElementById('pull-indicator');
-  if (!indicator) return;
-
-  container.addEventListener('touchstart', (e) => {
-    if (container.scrollTop <= 0) {
-      touchStartY = e.touches[0].clientY;
-      isPulling = true;
-    }
-  }, { passive: true });
-
-  container.addEventListener('touchmove', (e) => {
-    if (!isPulling) return;
-    const diff = e.touches[0].clientY - touchStartY;
-    if (diff > 60 && container.scrollTop <= 0) {
-      indicator.classList.remove('hidden');
-      indicator.textContent = '↑ Отпустите для обновления';
-    } else if (diff > 20 && container.scrollTop <= 0) {
-      indicator.classList.remove('hidden');
-      indicator.textContent = '↓ Потяните для обновления';
-    } else {
-      indicator.classList.add('hidden');
-    }
-  }, { passive: true });
-
-  container.addEventListener('touchend', async () => {
-    if (!isPulling) return;
-    isPulling = false;
-    if (!indicator.classList.contains('hidden')) {
-      indicator.textContent = 'Обновление...';
-      try {
-        await sync();
-        showToast('Обновлено');
-      } catch (err) {
-        showToast('Ошибка синхронизации');
-      }
-      indicator.classList.add('hidden');
-      if (getCurrentHash() === '#/home' || getCurrentHash() === '') renderHome(container);
-    }
-  }, { passive: true });
 }
 
 // ============================================================

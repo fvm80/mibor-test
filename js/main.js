@@ -148,6 +148,26 @@ async function initApp() {
     // Обновляем индикатор
     updateSyncIndicator();
 
+    // Клик по индикатору — ручная синхронизация
+    const syncDot = document.getElementById('sync-indicator');
+    if (syncDot) {
+      syncDot.style.cursor = 'pointer';
+      syncDot.addEventListener('click', async () => {
+        if (syncDot.dataset.syncing) return;
+        syncDot.dataset.syncing = '1';
+        syncDot.classList.add('sync-spinning');
+        try {
+          await sync();
+          showToast('Синхронизировано');
+        } catch (err) {
+          showToast('Ошибка синхронизации');
+        }
+        syncDot.classList.remove('sync-spinning');
+        delete syncDot.dataset.syncing;
+        updateSyncIndicator();
+      });
+    }
+
     // Регистрация Service Worker
     registerSW();
 
