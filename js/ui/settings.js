@@ -46,6 +46,9 @@ export async function renderSettings(container, renderId) {
   // === Установка PWA ===
   fragment.appendChild(_sectionInstall());
 
+  // === Оформление (Тема) ===
+  fragment.appendChild(_sectionTheme(container));
+
   // === Данные ===
   fragment.appendChild(_sectionData(container));
 
@@ -367,55 +370,110 @@ function _sectionInstall() {
 }
 
 // ============================================================
+//  ОФОРМЛЕНИЕ (ТЕМА)
+// ============================================================
+
+function _sectionTheme(pageContainer) {
+  const section = _createSection('Тема оформления');
+  const row = document.createElement('div');
+  row.className = 'chips-row';
+
+  const currentTheme = localStorage.getItem('uchet-theme') || 'auto';
+
+  const themes = [
+    { key: 'auto', label: 'Авто (как в системе)' },
+    { key: 'light', label: 'Светлая' },
+    { key: 'dark', label: 'Тёмная' }
+  ];
+
+  for (const t of themes) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip' + (currentTheme === t.key ? ' active' : '');
+    chip.textContent = t.label;
+    chip.addEventListener('click', () => {
+      localStorage.setItem('uchet-theme', t.key);
+      if (t.key === 'auto') {
+        document.documentElement.removeAttribute('data-theme');
+      } else {
+        document.documentElement.setAttribute('data-theme', t.key);
+      }
+      showToast(`Выбрана тема: ${t.label}`);
+      if (getCurrentHash() === '#/settings') renderSettings(pageContainer);
+    });
+    row.appendChild(chip);
+  }
+
+  section.appendChild(row);
+  return section;
+}
+
+// ============================================================
 //  ДАННЫЕ
 // ============================================================
 
 function _sectionData(pageContainer) {
-  const section = _createSection('Данные');
+  const section = _createSection('Данные и резервные копии');
   const btns = document.createElement('div');
   btns.className = 'settings-buttons';
 
-  btns.appendChild(_btn('Синхронизировать', 'btn-secondary', async (btn) => {
+  btns.appendChild(_btn('Синхронизировать сейчас', 'btn-secondary', async (btn) => {
     btn.disabled = true; btn.textContent = 'Синхронизация...';
     try { await sync(); showToast('✓ Синхронизировано'); }
     catch (e) { showToast('✗ ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = 'Синхронизировать'; }
+    finally { btn.disabled = false; btn.textContent = 'Синхронизировать сейчас'; }
   }));
 
-  btns.appendChild(_btn('Обновить курсы', 'btn-secondary', async (btn) => {
+  btns.appendChild(_btn('Обновить курсы валют', 'btn-secondary', async (btn) => {
     btn.disabled = true; btn.textContent = 'Обновление...';
     try { await refreshRates(); showToast('✓ Курсы обновлены'); }
     catch (e) { showToast('✗ ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = 'Обновить курсы'; }
+    finally { btn.disabled = false; btn.textContent = 'Обновить курсы валют'; }
   }));
 
-  btns.appendChild(_btn('Экспорт JSON', 'btn-secondary', async () => {
+  btns.appendChild(_btn('Экспорт JSON (все данные)', 'btn-secondary', async () => {
     const data = await getActiveData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    _downloadBlob(blob, `uchet-export-${new Date().toISOString().slice(0,10)}.json`);
-    showToast('JSON экспортирован');
+    _downloadBlob(blob, `uchet-backup-${new Date().toISOString().slice(0,10)}.json`);
+    showToast('Резервная копия JSON сохранена');
   }));
 
-  btns.appendChild(_btn('Экспорт CSV', 'btn-secondary', async () => {
+  btns.appendChild(_btn('Экспорт CSV (операции)', 'btn-secondary', async () => {
     const data = await getActiveData();
     const csv = _opsToCSV(data.ops);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     _downloadBlob(blob, `uchet-ops-${new Date().toISOString().slice(0,10)}.csv`);
-    showToast('CSV экспортирован');
+    showToast('CSV с операциями сохранён');
+  }));
+
+  btns.appendChild(_btn('Экспорт CSV (заказы)', 'btn-secondary', async () => {
+    const data = await getActiveData();
+    const csv = _ordersToCSV(data.orders);
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    _downloadBlob(blob, `uchet-orders-${new Date().toISOString().slice(0,10)}.csv`);
+    showToast('CSV с заказами сохранён');
+  }));
+
+  btns.appendChild(_btn('Экспорт CSV (долги)', 'btn-secondary', async () => {
+    const data = await getActiveData();
+    const csv = _debtsToCSV(data.debts);
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    _downloadBlob(blob, `uchet-debts-${new Date().toISOString().slice(0,10)}.csv`);
+    showToast('CSV с долгами сохранён');
   }));
 
   btns.appendChild(_btn('Очистить локальный кэш', 'btn-danger', async () => {
     const outbox = await getOutbox();
     if (outbox.length > 0) {
-      if (!confirm(`Есть ${outbox.length} неотправленных! Продолжить?`)) return;
+      if (!confirm(`Есть ${outbox.length} неотправленных изменений! При очистке они будут потеряны. Продолжить?`)) return;
     } else {
-      if (!confirm('Очистить все локальные данные?')) return;
+      if (!confirm('Очистить все локальные данные? Они загрузятся заново при следующей синхронизации.')) return;
     }
     for (const store of ['ops', 'orders', 'order_lines', 'debts', 'rates', 'settings', 'outbox']) {
       await clear(store);
     }
     await setMeta('since', null);
-    showToast('Кэш очищен');
+    showToast('Локальный кэш очищен');
     if (getCurrentHash() === '#/settings') renderSettings(pageContainer);
   }));
 
@@ -512,11 +570,37 @@ function _downloadBlob(blob, filename) {
 }
 
 function _opsToCSV(ops) {
-  const headers = ['id','type','amount','currency','date','counterparty','purpose','category','note'];
+  const headers = ['id','type','amount','currency','date','counterparty','purpose','category','note','order_id','debt_id','created_at'];
   const lines = [headers.join(';')];
   for (const op of ops) {
     const row = headers.map(h => {
-      const val = String(op[h] || '').replace(/"/g, '""');
+      const val = String(op[h] ?? '').replace(/"/g, '""');
+      return `"${val}"`;
+    });
+    lines.push(row.join(';'));
+  }
+  return lines.join('\r\n');
+}
+
+function _ordersToCSV(orders) {
+  const headers = ['id','name','client','status','price','currency','start_date','due_date','note','created_at'];
+  const lines = [headers.join(';')];
+  for (const order of orders) {
+    const row = headers.map(h => {
+      const val = String(order[h] ?? '').replace(/"/g, '""');
+      return `"${val}"`;
+    });
+    lines.push(row.join(';'));
+  }
+  return lines.join('\r\n');
+}
+
+function _debtsToCSV(debts) {
+  const headers = ['id','direction','amount','currency','date','due_date','counterparty','purpose','status','cash_moved','order_id','note','created_at'];
+  const lines = [headers.join(';')];
+  for (const debt of debts) {
+    const row = headers.map(h => {
+      const val = String(debt[h] ?? '').replace(/"/g, '""');
       return `"${val}"`;
     });
     lines.push(row.join(';'));

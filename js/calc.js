@@ -309,6 +309,77 @@ export function calcOrderSummary(order, orderLines, ops, rates, baseCurrency = '
   };
 }
 
+/**
+ * Расчёт ожидаемых сумм по всем активным заказам
+ * @param {Array} orders
+ * @param {Array} orderLines
+ * @param {Array} ops
+ * @param {Array} rates
+ * @param {string} baseCurrency
+ * @returns {Object}
+ */
+export function calcOrdersExpected(orders, orderLines, ops, rates, baseCurrency = 'MDL') {
+  const activeOrders = active(orders).filter(o => o.status === 'planned' || o.status === 'in_progress');
+
+  const incomeByCurrency = {};
+  const expenseByCurrency = {};
+  const netByCurrency = {};
+
+  let totalIncomeBase = 0;
+  let totalExpenseBase = 0;
+
+  for (const order of activeOrders) {
+    const summary = calcOrderSummary(order, orderLines, ops, rates, baseCurrency);
+    const cur = order.currency || baseCurrency;
+
+    if (summary.expectedIncome > 0) {
+      incomeByCurrency[cur] = (incomeByCurrency[cur] || 0) + summary.expectedIncome;
+      const rate = getEffectiveRate(cur, rates, baseCurrency);
+      if (rate !== null) {
+        totalIncomeBase += summary.expectedIncome * rate;
+      }
+    }
+
+    if (summary.expectedExpense > 0) {
+      expenseByCurrency[cur] = (expenseByCurrency[cur] || 0) + summary.expectedExpense;
+      const rate = getEffectiveRate(cur, rates, baseCurrency);
+      if (rate !== null) {
+        totalExpenseBase += summary.expectedExpense * rate;
+      }
+    }
+  }
+
+  // Округляем суммы по валютам
+  for (const cur of Object.keys(incomeByCurrency)) {
+    incomeByCurrency[cur] = round2(incomeByCurrency[cur]);
+  }
+  for (const cur of Object.keys(expenseByCurrency)) {
+    expenseByCurrency[cur] = round2(expenseByCurrency[cur]);
+  }
+
+  const allCurrencies = new Set([
+    ...Object.keys(incomeByCurrency),
+    ...Object.keys(expenseByCurrency)
+  ]);
+
+  for (const cur of allCurrencies) {
+    netByCurrency[cur] = round2((incomeByCurrency[cur] || 0) - (expenseByCurrency[cur] || 0));
+  }
+
+  const totalNetBase = round2(totalIncomeBase - totalExpenseBase);
+
+  return {
+    incomeByCurrency,
+    expenseByCurrency,
+    netByCurrency,
+    byCurrency: netByCurrency, // Для совместимости с функцией отображения плитки
+    totalIncomeBase: round2(totalIncomeBase),
+    totalExpenseBase: round2(totalExpenseBase),
+    totalNetBase,
+    totalBase: totalNetBase // Для совместимости с функцией отображения плитки
+  };
+}
+
 // ==================== ПРОГНОЗ ====================
 
 /**
@@ -318,32 +389,51 @@ export function calcOrderSummary(order, orderLines, ops, rates, baseCurrency = '
  * @param {Object} available — { byCurrency, totalBase }
  * @param {Object} owedToMe — { byCurrency, totalBase }
  * @param {Object} iOwe — { byCurrency, totalBase }
- * @param {number} expectedIncome — в базовой валюте
- * @param {number} expectedExpense — в базовой валюте
+ * @param {Object|number} ordersExpected — результат calcOrdersExpected или число ожидаемых поступлений
+ * @param {number} [expectedExpenseNum=0] — ожидаемые расходы в базовой (если ordersExpected число)
  * @returns {{ totalBase: number, byCurrency: Object }}
  */
-export function calcForecast(available, owedToMe, iOwe, expectedIncome, expectedExpense) {
+export function calcForecast(available, owedToMe, iOwe, ordersExpected = {}, expectedExpenseNum = 0) {
+  let expIncomeBase = 0;
+  let expExpenseBase = 0;
+  let expIncomeByCur = {};
+  let expExpenseByCur = {};
+
+  if (typeof ordersExpected === 'number') {
+    expIncomeBase = ordersExpected;
+    expExpenseBase = typeof expectedExpenseNum === 'number' ? expectedExpenseNum : 0;
+  } else if (ordersExpected && typeof ordersExpected === 'object') {
+    expIncomeBase = num(ordersExpected.totalIncomeBase);
+    expExpenseBase = num(ordersExpected.totalExpenseBase);
+    expIncomeByCur = ordersExpected.incomeByCurrency || {};
+    expExpenseByCur = ordersExpected.expenseByCurrency || {};
+  }
+
   const totalBase = round2(
-    available.totalBase +
-    owedToMe.totalBase -
-    iOwe.totalBase +
-    expectedIncome -
-    expectedExpense
+    num(available.totalBase) +
+    num(owedToMe.totalBase) -
+    num(iOwe.totalBase) +
+    expIncomeBase -
+    expExpenseBase
   );
 
   // По валютам
   const allCurrencies = new Set([
-    ...Object.keys(available.byCurrency),
-    ...Object.keys(owedToMe.byCurrency),
-    ...Object.keys(iOwe.byCurrency)
+    ...Object.keys(available.byCurrency || {}),
+    ...Object.keys(owedToMe.byCurrency || {}),
+    ...Object.keys(iOwe.byCurrency || {}),
+    ...Object.keys(expIncomeByCur),
+    ...Object.keys(expExpenseByCur)
   ]);
 
   const byCurrency = {};
   for (const cur of allCurrencies) {
     byCurrency[cur] = round2(
-      (available.byCurrency[cur] || 0) +
-      (owedToMe.byCurrency[cur] || 0) -
-      (iOwe.byCurrency[cur] || 0)
+      ((available.byCurrency && available.byCurrency[cur]) || 0) +
+      ((owedToMe.byCurrency && owedToMe.byCurrency[cur]) || 0) -
+      ((iOwe.byCurrency && iOwe.byCurrency[cur]) || 0) +
+      (expIncomeByCur[cur] || 0) -
+      (expExpenseByCur[cur] || 0)
     );
   }
 

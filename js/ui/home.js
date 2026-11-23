@@ -2,7 +2,7 @@
 // Курсы с диалогом, доступно, плитки, последние операции, pull-to-refresh
 
 import { getActiveData, put, addToOutbox } from '../db.js';
-import { calcAvailable, calcIncomeExpenseTotals, calcDebtsTotal, calcDebtRemainder, calcOrderSummary } from '../calc.js';
+import { calcAvailable, calcIncomeExpenseTotals, calcDebtsTotal, calcDebtRemainder, calcOrderSummary, calcOrdersExpected, calcForecast } from '../calc.js';
 import { formatRateDisplay, getEffectiveRate, isRateStale } from '../rates.js';
 import { sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
 import { navigate, getCurrentHash, isCurrentRender, nextRenderSeq } from '../router.js';
@@ -56,6 +56,8 @@ export async function renderHome(container, renderId) {
     const available = calcAvailable(ops, rates, baseCurrency);
     const owedToMe = calcDebtsTotal(debts, ops, rates, 'owed_to_me', baseCurrency);
     const iOwe = calcDebtsTotal(debts, ops, rates, 'i_owe', baseCurrency);
+    const ordersExpected = calcOrdersExpected(orders, order_lines, ops, rates, baseCurrency);
+    const forecast = calcForecast(available, owedToMe, iOwe, ordersExpected);
 
     // === Главная карточка ===
     const mainCard = document.createElement('div');
@@ -71,10 +73,31 @@ export async function renderHome(container, renderId) {
     availAmount.textContent = `${fmtAmount.format(available.totalBase)} ${baseCurrency}`;
     mainCard.appendChild(availAmount);
 
-    const forecastLabel = document.createElement('div');
-    forecastLabel.className = 'card-sublabel';
-    forecastLabel.textContent = 'Прогноз — этап 4';
-    mainCard.appendChild(forecastLabel);
+    // Блок «Прогноз» с подписью формулы
+    const forecastBox = document.createElement('div');
+    forecastBox.className = 'card-forecast-box mt-12 pt-12 border-top';
+
+    const forecastTop = document.createElement('div');
+    forecastTop.className = 'flex-between align-center';
+
+    const forecastTitle = document.createElement('span');
+    forecastTitle.className = 'card-label mb-0';
+    forecastTitle.textContent = 'Прогноз';
+    forecastTop.appendChild(forecastTitle);
+
+    const forecastAmount = document.createElement('span');
+    forecastAmount.className = 'card-forecast-amount font-bold amount' + (forecast.totalBase < 0 ? ' text-expense' : ' text-income');
+    forecastAmount.textContent = `${fmtAmount.format(forecast.totalBase)} ${baseCurrency}`;
+    forecastTop.appendChild(forecastAmount);
+
+    forecastBox.appendChild(forecastTop);
+
+    const forecastFormula = document.createElement('div');
+    forecastFormula.className = 'card-sublabel mt-4';
+    forecastFormula.textContent = 'Доступно + Мне должны − Я должен + По заказам';
+    forecastBox.appendChild(forecastFormula);
+
+    mainCard.appendChild(forecastBox);
 
     fragment.appendChild(mainCard);
 
@@ -85,16 +108,17 @@ export async function renderHome(container, renderId) {
     tileGrid.appendChild(_createTile('Доступно', available, baseCurrency, rates));
     tileGrid.appendChild(_createTile('Мне должны', owedToMe, baseCurrency, rates));
     tileGrid.appendChild(_createTile('Я должен', iOwe, baseCurrency, rates));
-
-    // Плитка «Ожидается по заказам» — заглушка до этапа 3
-    const expTile = _createTile('По заказам', { byCurrency: {}, totalBase: 0 }, baseCurrency, rates);
-    const sub = document.createElement('div');
-    sub.className = 'tile-sub';
-    sub.textContent = 'Этап 3–4';
-    expTile.appendChild(sub);
-    tileGrid.appendChild(expTile);
+    tileGrid.appendChild(_createOrdersTile(ordersExpected, baseCurrency, rates));
 
     fragment.appendChild(tileGrid);
+
+    // === Предупреждение: Кассовый разрыв (Прогноз < 0) ===
+    if (forecast.totalBase < 0) {
+      const alertBox = document.createElement('div');
+      alertBox.className = 'alert-banner text-expense mb-12';
+      alertBox.textContent = `⚠️ Кассовый разрыв! Прогноз: ${fmtAmount.format(forecast.totalBase)} ${baseCurrency}`;
+      fragment.appendChild(alertBox);
+    }
 
     // === Предупреждения: просроченные долги ===
     const overdueDebts = debts.filter(d =>
@@ -126,6 +150,17 @@ export async function renderHome(container, renderId) {
       alertBox.textContent = `⚠️ Перерасход по заказам: ${overrunOrders.length} (нажмите, чтобы открыть)`;
       alertBox.style.cursor = 'pointer';
       alertBox.addEventListener('click', () => navigate('#/orders'));
+      fragment.appendChild(alertBox);
+    }
+
+    // === Предупреждения: отсутствие курса для валюты ===
+    const missingRateCurrencies = currencies.filter(c => c !== baseCurrency && getEffectiveRate(c, rates, baseCurrency) === null);
+    for (const c of missingRateCurrencies) {
+      const alertBox = document.createElement('div');
+      alertBox.className = 'alert-banner text-warning mb-12';
+      alertBox.textContent = `⚠️ Нет курса для ${c} — валюта не учтена в базовом итоге`;
+      alertBox.style.cursor = 'pointer';
+      alertBox.addEventListener('click', () => _openRateDialog(c, rates, baseCurrency));
       fragment.appendChild(alertBox);
     }
 
@@ -698,6 +733,80 @@ function _createTile(title, data, baseCurrency, rates) {
     });
     details.appendChild(link);
   }
+
+  tile.appendChild(details);
+
+  tile.addEventListener('click', () => details.classList.toggle('hidden'));
+  return tile;
+}
+
+function _createOrdersTile(ordersExpected, baseCurrency, rates) {
+  const tile = document.createElement('div');
+  tile.className = 'tile';
+
+  const tileTitle = document.createElement('div');
+  tileTitle.className = 'tile-title';
+  tileTitle.textContent = 'Ожидается по заказам';
+  tile.appendChild(tileTitle);
+
+  const tileAmount = document.createElement('div');
+  tileAmount.className = 'tile-amount amount' + (ordersExpected.totalNetBase >= 0 ? ' text-income' : ' text-expense');
+  tileAmount.textContent = `${ordersExpected.totalNetBase >= 0 ? '+' : ''}${fmtAmount.format(ordersExpected.totalNetBase)} ${baseCurrency}`;
+  tile.appendChild(tileAmount);
+
+  // Подстроки: +поступления и −расходы
+  const sub = document.createElement('div');
+  sub.className = 'tile-sub font-xs flex-col gap-2 mt-4';
+  sub.innerHTML = `
+    <span class="text-income font-medium">+Поступления: ${fmtAmount.format(ordersExpected.totalIncomeBase)} ${baseCurrency}</span>
+    <span class="text-expense font-medium">−Расходы: ${fmtAmount.format(ordersExpected.totalExpenseBase)} ${baseCurrency}</span>
+  `;
+  tile.appendChild(sub);
+
+  // Разбивка по валютам (раскрывается по нажатию)
+  const details = document.createElement('div');
+  details.className = 'tile-details hidden';
+
+  const allCurs = new Set([
+    ...Object.keys(ordersExpected.incomeByCurrency || {}),
+    ...Object.keys(ordersExpected.expenseByCurrency || {})
+  ]);
+
+  if (allCurs.size === 0) {
+    const emptyLine = document.createElement('div');
+    emptyLine.className = 'tile-detail-line text-secondary';
+    emptyLine.textContent = 'Нет активных заказов с ожидаемыми суммами';
+    details.appendChild(emptyLine);
+  } else {
+    for (const cur of allCurs) {
+      const inc = ordersExpected.incomeByCurrency[cur] || 0;
+      const exp = ordersExpected.expenseByCurrency[cur] || 0;
+      const net = inc - exp;
+      const line = document.createElement('div');
+      line.className = 'tile-detail-line';
+      let text = `${cur}: +${fmtAmount.format(inc)} / −${fmtAmount.format(exp)} (итог: ${net >= 0 ? '+' : ''}${fmtAmount.format(net)})`;
+      if (cur !== baseCurrency) {
+        const rate = getEffectiveRate(cur, rates, baseCurrency);
+        if (rate !== null) {
+          text += ` (= ${fmtAmount.format(net * rate)} ${baseCurrency})`;
+        }
+      }
+      line.textContent = text;
+      details.appendChild(line);
+    }
+  }
+
+  const link = document.createElement('div');
+  link.className = 'tile-detail-link text-primary mt-8';
+  link.textContent = 'Открыть раздел заказов →';
+  link.style.cursor = 'pointer';
+  link.style.fontSize = '12px';
+  link.style.fontWeight = '600';
+  link.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigate('#/orders');
+  });
+  details.appendChild(link);
 
   tile.appendChild(details);
 

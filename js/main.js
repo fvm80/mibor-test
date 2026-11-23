@@ -80,6 +80,14 @@ async function initApp() {
     // Открываем базу данных
     await openDB();
 
+    // Применяем тему оформления
+    try {
+      const savedTheme = localStorage.getItem('uchet-theme') || 'auto';
+      if (savedTheme && savedTheme !== 'auto') {
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      }
+    } catch (_) {}
+
     appContent = document.getElementById('app-content');
 
     // Генерируем deviceId если нет
