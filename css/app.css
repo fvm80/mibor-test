@@ -144,6 +144,26 @@ ul, ol { list-style: none; }
   height: 12px;
   border-radius: 50%;
   flex-shrink: 0;
+  cursor: pointer;
+  /* Увеличенная область нажатия */
+  padding: 10px;
+  margin: -10px;
+  background-clip: content-box;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.2s;
+}
+
+.sync-dot:active {
+  transform: scale(0.8);
+}
+
+.sync-spinning {
+  animation: spin 0.8s linear infinite !important;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .sync-green { background-color: var(--color-income); }
@@ -1479,17 +1499,6 @@ ul, ol { list-style: none; }
   font-size: 12px;
   color: var(--color-primary);
   opacity: 0.85;
-}
-
-/* ============================================================
-   PULL-TO-REFRESH
-   ============================================================ */
-.pull-indicator {
-  text-align: center;
-  padding: 12px;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  transition: opacity 0.2s;
 }
 
 /* ============================================================
