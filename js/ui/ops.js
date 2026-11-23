@@ -6,7 +6,7 @@ import { calcIncomeExpenseTotals } from '../calc.js';
 import { scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
 import { formatDate, compareDatesDesc } from '../dates.js';
-import { navigate } from '../router.js';
+import { navigate, getCurrentHash, isCurrentRender, nextRenderSeq } from '../router.js';
 
 const fmtAmount = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 2,
@@ -26,14 +26,19 @@ let shownCount = 50;
 
 /**
  * Отрисовать страницу операций
+ * @param {HTMLElement} container
+ * @param {number} [renderId]
  */
-export async function renderOps(container) {
+export async function renderOps(container, renderId) {
   if (!container) return;
-  container.innerHTML = '';
+  const thisRender = renderId || nextRenderSeq();
   shownCount = pageSize;
 
   try {
     const data = await getActiveData();
+    if (!isCurrentRender(thisRender)) return;
+    if (getCurrentHash() !== '#/ops') return;
+
     const { ops, rates, settings, orders } = data;
 
     const baseCurrency = _getSetting(settings, 'base_currency', 'MDL');
@@ -41,6 +46,8 @@ export async function renderOps(container) {
     const catExpense = _getSettingJSON(settings, 'categories_expense', []);
     const catIncome = _getSettingJSON(settings, 'categories_income', []);
     const allCategories = [...new Set([...catIncome, ...catExpense])];
+
+    const fragment = document.createDocumentFragment();
 
     // === Поиск ===
     const searchRow = document.createElement('div');
@@ -51,10 +58,10 @@ export async function renderOps(container) {
     searchInput.value = filters.search;
     searchInput.addEventListener('input', () => {
       filters.search = searchInput.value;
-      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories);
+      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
     });
     searchRow.appendChild(searchInput);
-    container.appendChild(searchRow);
+    fragment.appendChild(searchRow);
 
     // === Фильтры ===
     const filtersRow = document.createElement('div');
@@ -67,7 +74,7 @@ export async function renderOps(container) {
       { key: 'all', label: 'Всё' }
     ], filters.period, (key) => {
       filters.period = key;
-      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories);
+      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
     });
 
     // Тип
@@ -77,10 +84,10 @@ export async function renderOps(container) {
       { key: 'expense', label: 'Расходы' }
     ], filters.type, (key) => {
       filters.type = key;
-      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories);
+      _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
     });
 
-    container.appendChild(filtersRow);
+    fragment.appendChild(filtersRow);
 
     // Вторая строка фильтров: валюта + категория
     const filtersRow2 = document.createElement('div');
@@ -106,17 +113,26 @@ export async function renderOps(container) {
       });
     }
 
-    container.appendChild(filtersRow2);
+    fragment.appendChild(filtersRow2);
 
     // === Контейнер для списка (обновляется при фильтрации) ===
     const listContainer = document.createElement('div');
     listContainer.id = 'ops-list-container';
-    container.appendChild(listContainer);
+    fragment.appendChild(listContainer);
 
-    _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
+    _renderList(fragment, ops, rates, settings, baseCurrency, currencies, allCategories, orders);
+
+    if (!isCurrentRender(thisRender)) return;
+    if (getCurrentHash() !== '#/ops') return;
+
+    container.innerHTML = '';
+    container.appendChild(fragment);
 
   } catch (err) {
+    if (!isCurrentRender(thisRender)) return;
+    if (getCurrentHash() !== '#/ops') return;
     console.error('Ошибка отрисовки операций:', err);
+    container.innerHTML = '';
     const errorEl = document.createElement('p');
     errorEl.className = 'placeholder-text';
     errorEl.textContent = 'Ошибка загрузки данных';
@@ -128,7 +144,7 @@ export async function renderOps(container) {
  * Отрисовать список с учётом фильтров (без перерисовки фильтров)
  */
 function _renderList(container, ops, rates, settings, baseCurrency, currencies, allCategories, orders = []) {
-  const listContainer = document.getElementById('ops-list-container');
+  const listContainer = (container && container.querySelector ? container.querySelector('#ops-list-container') : null) || document.getElementById('ops-list-container');
   if (!listContainer) return;
   listContainer.innerHTML = '';
 

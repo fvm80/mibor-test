@@ -2,7 +2,7 @@
 // Инициализация, маршрутизация, обработка событий
 
 import { openDB, getMeta, setMeta } from './db.js';
-import { initRouter, onRoute, navigate } from './router.js';
+import { initRouter, onRoute, navigate, nextRenderSeq } from './router.js';
 import { sync, startAutoSync, getSyncStatus, ping } from './sync.js';
 import { renderHome } from './ui/home.js';
 import { renderOps } from './ui/ops.js';
@@ -117,13 +117,14 @@ async function initApp() {
       updateSyncIndicator();
       // Обновляем текущую страницу
       const hash = window.location.hash || '#/home';
-      if (hash === '#/home') renderHome(clearContent());
-      if (hash === '#/ops') renderOps(clearContent());
-      if (hash === '#/debts') renderDebts(clearContent());
-      if (hash === '#/orders') renderOrders(clearContent());
+      const renderId = nextRenderSeq();
+      if (hash === '#/home') renderHome(clearContent(), renderId);
+      if (hash === '#/ops') renderOps(clearContent(), renderId);
+      if (hash === '#/debts') renderDebts(clearContent(), renderId);
+      if (hash === '#/orders') renderOrders(clearContent(), renderId);
       if (hash.startsWith('#/orders/')) {
         const orderId = hash.slice('#/orders/'.length);
-        renderOrderCard(clearContent(), { id: orderId });
+        renderOrderCard(clearContent(), { id: orderId }, renderId);
       }
     });
 
@@ -154,40 +155,40 @@ async function initApp() {
  * Регистрация маршрутов
  */
 function registerRoutes() {
-  onRoute('#/home', () => {
+  onRoute('#/home', (params, renderId) => {
     setTitle('Главная');
     setActiveTab('#/home');
-    renderHome(clearContent());
+    renderHome(clearContent(), renderId);
   });
 
-  onRoute('#/ops', () => {
+  onRoute('#/ops', (params, renderId) => {
     setTitle('Операции');
     setActiveTab('#/ops');
-    renderOps(clearContent());
+    renderOps(clearContent(), renderId);
   });
 
-  onRoute('#/orders', () => {
+  onRoute('#/orders', (params, renderId) => {
     setTitle('Заказы');
     setActiveTab('#/orders');
-    renderOrders(clearContent());
+    renderOrders(clearContent(), renderId);
   });
 
-  onRoute('#/orders/:id', (params) => {
+  onRoute('#/orders/:id', (params, renderId) => {
     setTitle('Заказ');
     setActiveTab('#/orders');
-    renderOrderCard(clearContent(), params);
+    renderOrderCard(clearContent(), params, renderId);
   });
 
-  onRoute('#/debts', () => {
+  onRoute('#/debts', (params, renderId) => {
     setTitle('Долги');
     setActiveTab('#/debts');
-    renderDebts(clearContent());
+    renderDebts(clearContent(), renderId);
   });
 
-  onRoute('#/settings', () => {
+  onRoute('#/settings', (params, renderId) => {
     setTitle('Настройки');
     setActiveTab('');
-    renderSettings(clearContent());
+    renderSettings(clearContent(), renderId);
   });
 }
 

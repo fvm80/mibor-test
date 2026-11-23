@@ -3,6 +3,32 @@
 
 const routes = [];
 let currentCleanup = null;
+let currentRenderSeq = 0;
+
+/**
+ * Получить следующий идентификатор отрисовки для отмены устаревших async-рендеров
+ * @returns {number}
+ */
+export function nextRenderSeq() {
+  return ++currentRenderSeq;
+}
+
+/**
+ * Получить текущий идентификатор отрисовки
+ * @returns {number}
+ */
+export function getCurrentRenderSeq() {
+  return currentRenderSeq;
+}
+
+/**
+ * Проверить, является ли данный id отрисовки актуальным
+ * @param {number} seq
+ * @returns {boolean}
+ */
+export function isCurrentRender(seq) {
+  return seq === currentRenderSeq;
+}
 
 /**
  * Регистрация обработчика маршрута
@@ -33,6 +59,7 @@ export function navigate(hash) {
  */
 function handleRoute() {
   const hash = window.location.hash || '#/home';
+  const renderId = nextRenderSeq();
 
   // Вызываем cleanup предыдущей страницы
   if (typeof currentCleanup === 'function') {
@@ -47,7 +74,7 @@ function handleRoute() {
       route.paramNames.forEach((name, i) => {
         params[name] = decodeURIComponent(match[i + 1]);
       });
-      const result = route.handler(params);
+      const result = route.handler(params, renderId);
       // Если обработчик вернул функцию — это cleanup
       if (typeof result === 'function') {
         currentCleanup = result;
@@ -65,6 +92,13 @@ function handleRoute() {
  */
 export function initRouter() {
   window.addEventListener('hashchange', handleRoute);
+  if (!window.location.hash) {
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', '#/home');
+    } else {
+      window.location.hash = '#/home';
+    }
+  }
   // Обработать текущий маршрут
   handleRoute();
 }

@@ -5,6 +5,7 @@ import { getMeta, setMeta, put, getAll, clear, getActiveData, getOutbox, addToOu
 import { ping, init, sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
 import { formatDateTime } from '../dates.js';
+import { getCurrentHash, isCurrentRender, nextRenderSeq } from '../router.js';
 
 // Перехватываем событие установки PWA (Android)
 let deferredInstallPrompt = null;
@@ -15,33 +16,47 @@ window.addEventListener('beforeinstallprompt', (e) => {
 
 /**
  * Отрисовать настройки
+ * @param {HTMLElement} container
+ * @param {number} [renderId]
  */
-export async function renderSettings(container) {
+export async function renderSettings(container, renderId) {
   if (!container) return;
-  container.innerHTML = '';
+  const thisRender = renderId || nextRenderSeq();
 
   const scriptUrl = await getMeta('scriptUrl') || '';
   const token = await getMeta('token') || '';
   const data = await getActiveData();
+  if (!isCurrentRender(thisRender)) return;
+  if (getCurrentHash() !== '#/settings') return;
+
   const { settings } = data;
+  const fragment = document.createDocumentFragment();
 
   // === Подключение ===
-  container.appendChild(_sectionConnection(scriptUrl, token));
+  fragment.appendChild(_sectionConnection(scriptUrl, token));
 
   // === Валюты ===
-  container.appendChild(await _sectionCurrencies(settings, data));
+  const curSection = await _sectionCurrencies(settings, data);
+  if (!isCurrentRender(thisRender)) return;
+  fragment.appendChild(curSection);
 
   // === Категории ===
-  container.appendChild(_sectionCategories(settings, container));
+  fragment.appendChild(_sectionCategories(settings, container));
 
   // === Установка PWA ===
-  container.appendChild(_sectionInstall());
+  fragment.appendChild(_sectionInstall());
 
   // === Данные ===
-  container.appendChild(_sectionData(container));
+  fragment.appendChild(_sectionData(container));
 
   // === О приложении ===
-  container.appendChild(await _sectionAbout());
+  const aboutSection = await _sectionAbout();
+  if (!isCurrentRender(thisRender)) return;
+  if (getCurrentHash() !== '#/settings') return;
+  fragment.appendChild(aboutSection);
+
+  container.innerHTML = '';
+  container.appendChild(fragment);
 }
 
 // ============================================================
@@ -157,9 +172,9 @@ async function _sectionCurrencies(settings, data) {
         const updated = currencies.filter(c => c !== cur);
         await _saveSetting(settings, 'currencies', JSON.stringify(updated));
         showToast(`${cur} удалена`);
-        // Перерисовать
+        // Перерисовать, если всё ещё на странице настроек
         const container = document.getElementById('app-content');
-        if (container) renderSettings(container);
+        if (container && getCurrentHash() === '#/settings') renderSettings(container);
       });
       item.appendChild(delBtn);
     }
@@ -207,7 +222,7 @@ async function _sectionCurrencies(settings, data) {
     scheduleSyncAfterChange();
     showToast(`${code} добавлена`);
     const container = document.getElementById('app-content');
-    if (container) renderSettings(container);
+    if (container && getCurrentHash() === '#/settings') renderSettings(container);
   }));
 
   section.appendChild(addRow);
@@ -270,7 +285,7 @@ function _categoryList(settings, settingKey, pageContainer) {
 
       await _saveSetting(settings, settingKey, JSON.stringify(updated));
       showToast('Категории обновлены');
-      renderSettings(pageContainer);
+      if (getCurrentHash() === '#/settings') renderSettings(pageContainer);
     });
 
     list.appendChild(chip);
@@ -293,7 +308,7 @@ function _categoryList(settings, settingKey, pageContainer) {
     const updated = [...categories, name];
     await _saveSetting(settings, settingKey, JSON.stringify(updated));
     showToast(`«${name}» добавлена`);
-    renderSettings(pageContainer);
+    if (getCurrentHash() === '#/settings') renderSettings(pageContainer);
   }));
 
   wrapper.appendChild(addRow);
@@ -401,7 +416,7 @@ function _sectionData(pageContainer) {
     }
     await setMeta('since', null);
     showToast('Кэш очищен');
-    renderSettings(pageContainer);
+    if (getCurrentHash() === '#/settings') renderSettings(pageContainer);
   }));
 
   section.appendChild(btns);

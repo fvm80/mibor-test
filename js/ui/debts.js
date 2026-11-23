@@ -7,6 +7,7 @@ import { getEffectiveRate } from '../rates.js';
 import { scheduleSyncAfterChange } from '../sync.js';
 import { showToast } from './toast.js';
 import { formatDate, isDateBeforeToday, compareDatesDesc, getTodayDateString } from '../dates.js';
+import { navigate, getCurrentHash, isCurrentRender, nextRenderSeq } from '../router.js';
 
 const fmtAmount = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 2,
@@ -20,17 +21,23 @@ let currentFilter = 'open';          // 'open' | 'all'
 /**
  * Отрисовать страницу «Долги»
  * @param {HTMLElement} container
+ * @param {number} [renderId]
  */
-export async function renderDebts(container) {
+export async function renderDebts(container, renderId) {
   if (!container) return;
-  container.innerHTML = '';
+  const thisRender = renderId || nextRenderSeq();
 
   try {
     const data = await getActiveData();
+    if (!isCurrentRender(thisRender)) return;
+    if (getCurrentHash() !== '#/debts') return;
+
     const { debts, ops, rates, settings } = data;
 
     const baseCurrency = _getSetting(settings, 'base_currency', 'MDL');
     const currencies = _getSettingJSON(settings, 'currencies', ['MDL', 'USD', 'EUR']);
+
+    const fragment = document.createDocumentFragment();
 
     // === Переключатель направления (Мне должны / Я должен) ===
     const dirSwitch = document.createElement('div');
@@ -56,7 +63,7 @@ export async function renderDebts(container) {
     });
     dirSwitch.appendChild(iOweBtn);
 
-    container.appendChild(dirSwitch);
+    fragment.appendChild(dirSwitch);
 
     // === Сводка по выбранному направлению ===
     const debtsTotal = calcDebtsTotal(debts, ops, rates, currentDirection, baseCurrency);
@@ -88,7 +95,7 @@ export async function renderDebts(container) {
       summaryCard.appendChild(curSub);
     }
 
-    container.appendChild(summaryCard);
+    fragment.appendChild(summaryCard);
 
     // === Панель управления: Фильтр и кнопка «+ Новый долг» ===
     const controlRow = document.createElement('div');
@@ -128,7 +135,7 @@ export async function renderDebts(container) {
     });
     controlRow.appendChild(addBtn);
 
-    container.appendChild(controlRow);
+    fragment.appendChild(controlRow);
 
     // === Список долгов ===
     const list = document.createElement('div');
@@ -167,9 +174,17 @@ export async function renderDebts(container) {
       }
     }
 
-    container.appendChild(list);
+    fragment.appendChild(list);
+
+    if (!isCurrentRender(thisRender)) return;
+    if (getCurrentHash() !== '#/debts') return;
+
+    container.innerHTML = '';
+    container.appendChild(fragment);
 
   } catch (err) {
+    if (!isCurrentRender(thisRender)) return;
+    if (getCurrentHash() !== '#/debts') return;
     console.error('Ошибка отрисовки долгов:', err);
     container.innerHTML = '';
     const errEl = document.createElement('p');

@@ -5,7 +5,7 @@ import { getActiveData, put, addToOutbox } from '../db.js';
 import { calcAvailable, calcIncomeExpenseTotals, calcDebtsTotal, calcDebtRemainder, calcOrderSummary } from '../calc.js';
 import { formatRateDisplay, getEffectiveRate, isRateStale } from '../rates.js';
 import { sync, refreshRates, scheduleSyncAfterChange } from '../sync.js';
-import { navigate } from '../router.js';
+import { navigate, getCurrentHash, isCurrentRender, nextRenderSeq } from '../router.js';
 import { showToast } from './toast.js';
 import { formatDate, formatDateTime, isDateBeforeToday, compareDatesDesc, compareDueDatesAsc } from '../dates.js';
 
@@ -22,28 +22,35 @@ let isPulling = false;
 /**
  * Отрисовать главную страницу
  * @param {HTMLElement} container
+ * @param {number} [renderId]
  */
-export async function renderHome(container) {
+export async function renderHome(container, renderId) {
   if (!container) return;
-  container.innerHTML = '';
+  const thisRender = renderId || nextRenderSeq();
 
   try {
     const data = await getActiveData();
+    if (!isCurrentRender(thisRender)) return;
+    const currentHash = getCurrentHash();
+    if (currentHash !== '#/home' && currentHash !== '') return;
+
     const { ops, rates, settings, debts, orders, order_lines } = data;
 
     const baseCurrency = _getSetting(settings, 'base_currency', 'MDL');
     const currencies = _getSettingJSON(settings, 'currencies', ['MDL', 'USD', 'EUR']);
+
+    const fragment = document.createDocumentFragment();
 
     // === Pull-to-refresh индикатор ===
     const pullIndicator = document.createElement('div');
     pullIndicator.className = 'pull-indicator hidden';
     pullIndicator.id = 'pull-indicator';
     pullIndicator.textContent = '↓ Потяните для обновления';
-    container.appendChild(pullIndicator);
+    fragment.appendChild(pullIndicator);
 
     // === Секция курсов ===
     const ratesSection = _createRatesSection(currencies, rates, baseCurrency);
-    container.appendChild(ratesSection);
+    fragment.appendChild(ratesSection);
 
     // === Расчёты ===
     const available = calcAvailable(ops, rates, baseCurrency);
@@ -69,7 +76,7 @@ export async function renderHome(container) {
     forecastLabel.textContent = 'Прогноз — этап 4';
     mainCard.appendChild(forecastLabel);
 
-    container.appendChild(mainCard);
+    fragment.appendChild(mainCard);
 
     // === Плитки ===
     const tileGrid = document.createElement('div');
@@ -87,7 +94,7 @@ export async function renderHome(container) {
     expTile.appendChild(sub);
     tileGrid.appendChild(expTile);
 
-    container.appendChild(tileGrid);
+    fragment.appendChild(tileGrid);
 
     // === Предупреждения: просроченные долги ===
     const overdueDebts = debts.filter(d =>
@@ -103,7 +110,7 @@ export async function renderHome(container) {
       alertBox.textContent = `⚠️ Просрочено долгов: ${overdueDebts.length} (нажмите, чтобы открыть)`;
       alertBox.style.cursor = 'pointer';
       alertBox.addEventListener('click', () => navigate('#/debts'));
-      container.appendChild(alertBox);
+      fragment.appendChild(alertBox);
     }
 
     // === Предупреждения: перерасход по заказам ===
@@ -119,7 +126,7 @@ export async function renderHome(container) {
       alertBox.textContent = `⚠️ Перерасход по заказам: ${overrunOrders.length} (нажмите, чтобы открыть)`;
       alertBox.style.cursor = 'pointer';
       alertBox.addEventListener('click', () => navigate('#/orders'));
-      container.appendChild(alertBox);
+      fragment.appendChild(alertBox);
     }
 
     // === Активные заказы (до 5) ===
@@ -194,7 +201,7 @@ export async function renderHome(container) {
         ordersSection.appendChild(card);
       }
 
-      container.appendChild(ordersSection);
+      fragment.appendChild(ordersSection);
     }
 
     // === Ближайшие долги (до 3) ===
@@ -276,7 +283,7 @@ export async function renderHome(container) {
         debtsSection.appendChild(card);
       }
 
-      container.appendChild(debtsSection);
+      fragment.appendChild(debtsSection);
     }
 
     // === Последние 5 операций ===
@@ -303,12 +310,22 @@ export async function renderHome(container) {
       }
     }
 
-    container.appendChild(opsSection);
+    fragment.appendChild(opsSection);
+
+    // Проверяем актуальность перед обновлением DOM
+    if (!isCurrentRender(thisRender)) return;
+    if (currentHash !== '#/home' && currentHash !== '') return;
+
+    container.innerHTML = '';
+    container.appendChild(fragment);
 
     // Настроить pull-to-refresh
     _setupPullToRefresh(container);
 
   } catch (err) {
+    if (!isCurrentRender(thisRender)) return;
+    const currentHash = getCurrentHash();
+    if (currentHash !== '#/home' && currentHash !== '') return;
     console.error('Ошибка отрисовки главной:', err);
     container.innerHTML = '';
     const errorEl = document.createElement('p');
@@ -455,9 +472,9 @@ function _openRateDialog(currency, rates, baseCurrency) {
       await refreshRates();
       showToast('Курсы обновлены');
       _closeModal(overlay);
-      // Перерисовать страницу
+      // Перерисовать страницу, если всё ещё на главной
       const container = document.getElementById('app-content');
-      if (container) renderHome(container);
+      if (container && (getCurrentHash() === '#/home' || getCurrentHash() === '')) renderHome(container);
     } catch (err) {
       showToast('Ошибка: ' + err.message);
       refreshBtn.disabled = false;
@@ -485,7 +502,7 @@ function _openRateDialog(currency, rates, baseCurrency) {
       showToast('Курс сохранён');
       _closeModal(overlay);
       const container = document.getElementById('app-content');
-      if (container) renderHome(container);
+      if (container && (getCurrentHash() === '#/home' || getCurrentHash() === '')) renderHome(container);
     } catch (err) {
       showToast('Ошибка сохранения');
     }
@@ -560,7 +577,7 @@ function _setupPullToRefresh(container) {
         showToast('Ошибка синхронизации');
       }
       indicator.classList.add('hidden');
-      renderHome(container);
+      if (getCurrentHash() === '#/home' || getCurrentHash() === '') renderHome(container);
     }
   }, { passive: true });
 }

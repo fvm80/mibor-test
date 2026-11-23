@@ -3,7 +3,7 @@
 
 import { getActiveData, put, addToOutbox, getAll } from '../db.js';
 import { calcOrderSummary } from '../calc.js';
-import { navigate } from '../router.js';
+import { navigate, getCurrentHash, isCurrentRender, nextRenderSeq } from '../router.js';
 import { showToast } from './toast.js';
 import { formatDate, isDateBeforeToday, compareDatesDesc, getTodayDateString } from '../dates.js';
 import { openForm } from './form.js';
@@ -42,14 +42,24 @@ let currentOrderFilter = 'active';
 //  1. СПИСОК ЗАКАЗОВ (#/orders)
 // ============================================================
 
-export async function renderOrders(container) {
+/**
+ * Отрисовать список заказов
+ * @param {HTMLElement} container
+ * @param {number} [renderId]
+ */
+export async function renderOrders(container, renderId) {
   if (!container) return;
-  container.innerHTML = '';
+  const thisRender = renderId || nextRenderSeq();
 
   try {
     const data = await getActiveData();
+    if (!isCurrentRender(thisRender)) return;
+    if (getCurrentHash() !== '#/orders') return;
+
     const { orders, order_lines, ops, rates, settings } = data;
     const baseCurrency = _getSetting(settings, 'base_currency', 'MDL');
+
+    const fragment = document.createDocumentFragment();
 
     // === Панель управления: Фильтр и кнопка «+ Новый заказ» ===
     const controlRow = document.createElement('div');
@@ -99,7 +109,7 @@ export async function renderOrders(container) {
     });
     controlRow.appendChild(addBtn);
 
-    container.appendChild(controlRow);
+    fragment.appendChild(controlRow);
 
     // === Фильтрация заказов ===
     let filteredOrders = [...orders];
@@ -137,9 +147,17 @@ export async function renderOrders(container) {
       }
     }
 
-    container.appendChild(list);
+    fragment.appendChild(list);
+
+    if (!isCurrentRender(thisRender)) return;
+    if (getCurrentHash() !== '#/orders') return;
+
+    container.innerHTML = '';
+    container.appendChild(fragment);
 
   } catch (err) {
+    if (!isCurrentRender(thisRender)) return;
+    if (getCurrentHash() !== '#/orders') return;
     console.error('Ошибка отрисовки заказов:', err);
     container.innerHTML = '';
     const errEl = document.createElement('p');
@@ -255,9 +273,9 @@ function _createOrderListItem(order, orderLines, ops, rates, baseCurrency) {
 //  2. ДЕТАЛЬНАЯ КАРТОЧКА ЗАКАЗА (#/orders/:id)
 // ============================================================
 
-export async function renderOrderCard(container, params) {
+export async function renderOrderCard(container, params, renderId) {
   if (!container) return;
-  container.innerHTML = '';
+  const thisRender = renderId || nextRenderSeq();
 
   const orderId = params && params.id;
   if (!orderId) {
@@ -267,11 +285,16 @@ export async function renderOrderCard(container, params) {
 
   try {
     const data = await getActiveData();
+    if (!isCurrentRender(thisRender)) return;
+    if (!getCurrentHash().startsWith('#/orders/')) return;
+
     const { orders, order_lines, ops, rates, settings } = data;
     const baseCurrency = _getSetting(settings, 'base_currency', 'MDL');
 
     const order = orders.find(o => o.id === orderId);
     if (!order) {
+      if (!isCurrentRender(thisRender)) return;
+      if (!getCurrentHash().startsWith('#/orders/')) return;
       const errBox = document.createElement('div');
       errBox.className = 'card text-center p-16';
       errBox.innerHTML = '<p class="placeholder-text">Заказ не найден или был удалён</p>';
@@ -281,9 +304,12 @@ export async function renderOrderCard(container, params) {
       backBtn.textContent = '← К списку заказов';
       backBtn.addEventListener('click', () => navigate('#/orders'));
       errBox.appendChild(backBtn);
+      container.innerHTML = '';
       container.appendChild(errBox);
       return;
     }
+
+    const fragment = document.createDocumentFragment();
 
     const lines = order_lines.filter(l => l.order_id === order.id);
     const orderOps = ops.filter(o => o.order_id === order.id && !o.debt_id);
@@ -300,7 +326,7 @@ export async function renderOrderCard(container, params) {
     backLink.addEventListener('click', () => navigate('#/orders'));
     navBar.appendChild(backLink);
 
-    container.appendChild(navBar);
+    fragment.appendChild(navBar);
 
     // --- ШАПКА ЗАКАЗА ---
     const headerCard = document.createElement('div');
@@ -353,7 +379,7 @@ export async function renderOrderCard(container, params) {
     });
     headerCard.appendChild(editHeaderBtn);
 
-    container.appendChild(headerCard);
+    fragment.appendChild(headerCard);
 
     // --- СВОДКА «ПЛАН / ФАКТ / РАЗНИЦА» ---
     const summaryCard = document.createElement('div');
@@ -401,7 +427,7 @@ export async function renderOrderCard(container, params) {
       summaryCard.appendChild(_summaryRow('Ожидается потратить', `${fmtAmount.format(summary.expectedExpense)} ${cur}`, 'text-secondary'));
     }
 
-    container.appendChild(summaryCard);
+    fragment.appendChild(summaryCard);
 
     // --- ПОЗИЦИИ ПЛАНА ПО ТИПАМ ---
     const planSection = document.createElement('div');
@@ -455,7 +481,7 @@ export async function renderOrderCard(container, params) {
       }
     }
 
-    container.appendChild(planSection);
+    fragment.appendChild(planSection);
 
     // --- ВНЕПЛАНОВЫЕ РАСХОДЫ ---
     const unplannedOps = orderOps.filter(o => o.type === 'expense' && !o.order_line_id);
@@ -493,7 +519,7 @@ export async function renderOrderCard(container, params) {
         unSection.appendChild(opRow);
       }
 
-      container.appendChild(unSection);
+      fragment.appendChild(unSection);
     }
 
     // --- ПОСТУПЛЕНИЯ ОТ КЛИЕНТА ---
@@ -535,7 +561,7 @@ export async function renderOrderCard(container, params) {
     });
     recSection.appendChild(addRecBtn);
 
-    container.appendChild(recSection);
+    fragment.appendChild(recSection);
 
     // --- КНОПКИ ДЕЙСТВИЙ НАД ЗАКАЗОМ ---
     const actionsBox = document.createElement('div');
@@ -608,9 +634,17 @@ export async function renderOrderCard(container, params) {
     });
     actionsBox.appendChild(deleteBtn);
 
-    container.appendChild(actionsBox);
+    fragment.appendChild(actionsBox);
+
+    if (!isCurrentRender(thisRender)) return;
+    if (!getCurrentHash().startsWith('#/orders/')) return;
+
+    container.innerHTML = '';
+    container.appendChild(fragment);
 
   } catch (err) {
+    if (!isCurrentRender(thisRender)) return;
+    if (!getCurrentHash().startsWith('#/orders/')) return;
     console.error('Ошибка отрисовки карточки заказа:', err);
     container.innerHTML = '';
     const errEl = document.createElement('p');
