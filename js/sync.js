@@ -142,9 +142,9 @@ export async function refreshRates() {
 }
 
 /**
- * Запланировать синхронизацию через 2 сек после изменения (debounce)
+ * Запланировать синхронизацию после изменения (debounce 500мс)
  */
-export function scheduleSyncAfterChange() {
+export function scheduleSyncAfterChange(delayMs = 500) {
   // Обновляем статус
   syncStatus = 'pending';
   dispatchSyncEvent('sync-status', { status: 'pending' });
@@ -155,7 +155,7 @@ export function scheduleSyncAfterChange() {
   syncTimer = setTimeout(() => {
     sync().catch(err => console.warn('Background sync failed:', err));
     syncTimer = null;
-  }, 2000);
+  }, delayMs);
 }
 
 /**

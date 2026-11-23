@@ -3,6 +3,7 @@
 
 import { getActiveData, put, addToOutbox, getAll } from '../db.js';
 import { calcOrderSummary } from '../calc.js';
+import { scheduleSyncAfterChange } from '../sync.js';
 import { navigate, getCurrentHash, isCurrentRender, nextRenderSeq } from '../router.js';
 import { showToast } from './toast.js';
 import { formatDate, isDateBeforeToday, compareDatesDesc, getTodayDateString } from '../dates.js';
@@ -730,6 +731,7 @@ export async function renderOrderCard(container, params, renderId) {
         order.updated_at = new Date().toISOString();
         await put('orders', order);
         await addToOutbox({ sheet: 'orders', data: order });
+        scheduleSyncAfterChange();
         showToast('Заказ отменён');
         renderOrderCard(container, params);
       });
@@ -758,6 +760,7 @@ export async function renderOrderCard(container, params, renderId) {
         await addToOutbox({ sheet: 'order_lines', data: line });
       }
 
+      scheduleSyncAfterChange();
       showToast('Заказ удалён');
       navigate('#/orders');
     });
@@ -1003,6 +1006,7 @@ function _openNewOrderDialog(settings, fullData, container) {
 
     await put('orders', newOrder);
     await addToOutbox({ sheet: 'orders', data: newOrder });
+    scheduleSyncAfterChange();
 
     showToast('Заказ создан');
     _closeModal(overlay);
@@ -1154,6 +1158,7 @@ function _openEditOrderHeaderDialog(order, orderOps, settings, fullData, pageCon
 
     await put('orders', order);
     await addToOutbox({ sheet: 'orders', data: order });
+    scheduleSyncAfterChange();
 
     showToast('Заказ обновлён');
     _closeModal(overlay);
@@ -1336,6 +1341,7 @@ function _openAddOrderLineDialog(order, settings, fullData, pageContainer) {
 
     await put('order_lines', newLine);
     await addToOutbox({ sheet: 'order_lines', data: newLine });
+    scheduleSyncAfterChange();
 
     showToast('Позиция добавлена');
     _closeModal(overlay);
@@ -1424,6 +1430,7 @@ function _openLineDetailsDialog(line, order, factAmt, planAmt, deviation, allOps
       line.updated_at = new Date().toISOString();
       await put('order_lines', line);
       await addToOutbox({ sheet: 'order_lines', data: line });
+      scheduleSyncAfterChange();
       showToast('Оценка труда сохранена');
       _closeModal(overlay);
       renderOrderCard(pageContainer, { id: order.id });
@@ -1501,6 +1508,7 @@ function _openLineDetailsDialog(line, order, factAmt, planAmt, deviation, allOps
     line.updated_at = new Date().toISOString();
     await put('order_lines', line);
     await addToOutbox({ sheet: 'order_lines', data: line });
+    scheduleSyncAfterChange();
     showToast('Позиция удалена');
     _closeModal(overlay);
     renderOrderCard(pageContainer, { id: order.id });
@@ -1623,6 +1631,7 @@ function _openEditOrderLineDialog(line, order, pageContainer) {
 
     await put('order_lines', line);
     await addToOutbox({ sheet: 'order_lines', data: line });
+    scheduleSyncAfterChange();
 
     showToast('Позиция обновлена');
     _closeModal(overlay);
@@ -1708,6 +1717,7 @@ function _openLinkOpToLineDialog(op, lines, order, pageContainer) {
     op.updated_at = new Date().toISOString();
     await put('ops', op);
     await addToOutbox({ sheet: 'ops', data: op });
+    scheduleSyncAfterChange();
 
     showToast('Расход привязан к позиции');
     _closeModal(overlay);
@@ -1810,6 +1820,7 @@ async function _completeOrder(order, summary, pageContainer) {
       order.updated_at = now;
       await put('orders', order);
       await addToOutbox({ sheet: 'orders', data: order });
+      scheduleSyncAfterChange();
 
       showToast('Заказ завершён, создан долг');
       _closeModal(overlay);
@@ -1829,6 +1840,7 @@ async function _completeOrder(order, summary, pageContainer) {
       order.updated_at = now;
       await put('orders', order);
       await addToOutbox({ sheet: 'orders', data: order });
+      scheduleSyncAfterChange();
 
       showToast('Заказ завершён');
       _closeModal(overlay);
@@ -1860,6 +1872,7 @@ async function _completeOrder(order, summary, pageContainer) {
     order.updated_at = now;
     await put('orders', order);
     await addToOutbox({ sheet: 'orders', data: order });
+    scheduleSyncAfterChange();
 
     showToast('Заказ успешно завершён!');
     renderOrderCard(pageContainer, { id: order.id });
@@ -1917,6 +1930,7 @@ async function _copyOrder(order, lines) {
     await addToOutbox({ sheet: 'order_lines', data: newLine });
   }
 
+  scheduleSyncAfterChange();
   showToast('Заказ скопирован');
   navigate(`#/orders/${newOrderId}`);
 }
@@ -1986,15 +2000,30 @@ function _buildWhatsAppText(selectedOrders, groupsByType, totalSum, currency) {
       if (item.hasQty) {
         qtyPart = ` — ${item.totalRemainQty || item.totalPlanQty} ${item.unit || 'шт'}`;
       }
+
+      let pricePart = '';
+      const upArr = item.unitPrices ? Array.from(item.unitPrices) : [];
+      if (upArr.length === 1) {
+        pricePart = ` (цена: ${fmtAmount.format(upArr[0])} ${item.currency})`;
+      } else if (upArr.length > 1) {
+        pricePart = ` (цена: ${fmtAmount.format(upArr[0])}..${fmtAmount.format(upArr[upArr.length - 1])} ${item.currency})`;
+      }
+
       let amtPart = '';
       if (item.totalRemainAmt > 0) {
-        amtPart = ` (~${fmtAmount.format(item.totalRemainAmt)} ${item.currency})`;
+        amtPart = ` [~${fmtAmount.format(item.totalRemainAmt)} ${item.currency}]`;
       }
+
       let orderPart = '';
       if (selectedOrders.length > 1) {
-        orderPart = ` [${Array.from(item.orderNames).join(', ')}]`;
+        orderPart = ` (${Array.from(item.orderNames).join(', ')})`;
       }
-      lines.push(`${mark} ${item.name}${qtyPart}${amtPart}${orderPart}`);
+
+      lines.push(`${mark} *${item.name}*${qtyPart}${pricePart}${amtPart}${orderPart}`);
+
+      if (item.notes && item.notes.size > 0) {
+        lines.push(`   💬 _Примечание: ${Array.from(item.notes).join('; ')}_`);
+      }
     }
   }
 
@@ -2076,6 +2105,8 @@ function _openPurchaseListDialog(selectedOrders, fullData, pageContainer) {
         totalRemainAmt: 0,
         currency: line.currency || order.currency,
         orderNames: new Set(),
+        notes: new Set(),
+        unitPrices: new Set(),
         checked: false
       });
     }
@@ -2089,6 +2120,13 @@ function _openPurchaseListDialog(selectedOrders, fullData, pageContainer) {
     item.totalPlanAmt += planAmt;
     item.totalRemainAmt += remainAmt;
     item.orderNames.add(order.name || 'Заказ');
+    if (line.note && line.note.trim()) {
+      item.notes.add(line.note.trim());
+    }
+    const up = parseFloat(line.unit_price);
+    if (!isNaN(up) && up > 0) {
+      item.unitPrices.add(up);
+    }
   }
 
   // Распределяем по категориям
@@ -2234,7 +2272,7 @@ function _openPurchaseListDialog(selectedOrders, fullData, pageContainer) {
         }
         body.appendChild(nameLine);
 
-        // Количество и сумма
+        // Количество, цена и сумма
         const metaLine = document.createElement('div');
         metaLine.className = 'purchase-item-meta';
 
@@ -2247,12 +2285,32 @@ function _openPurchaseListDialog(selectedOrders, fullData, pageContainer) {
           }
         }
 
+        let priceStr = '';
+        const upArr = item.unitPrices ? Array.from(item.unitPrices) : [];
+        if (upArr.length === 1) {
+          priceStr = `по ${fmtAmount.format(upArr[0])} ${item.currency}`;
+        } else if (upArr.length > 1) {
+          priceStr = `по ${fmtAmount.format(upArr[0])}..${fmtAmount.format(upArr[upArr.length - 1])} ${item.currency}`;
+        }
+
         const amtStr = item.totalRemainAmt > 0
           ? `~${fmtAmount.format(item.totalRemainAmt)} ${item.currency}`
           : 'Куплено';
 
-        metaLine.textContent = qtyStr ? `${qtyStr} · ${amtStr}` : amtStr;
+        const metaParts = [];
+        if (qtyStr) metaParts.push(qtyStr);
+        if (priceStr) metaParts.push(priceStr);
+        metaParts.push(amtStr);
+        metaLine.textContent = metaParts.join(' · ');
         body.appendChild(metaLine);
+
+        // Примечание
+        if (item.notes && item.notes.size > 0) {
+          const noteLine = document.createElement('div');
+          noteLine.className = 'purchase-item-note';
+          noteLine.innerHTML = `💬 <em>${Array.from(item.notes).join('; ')}</em>`;
+          body.appendChild(noteLine);
+        }
 
         row.appendChild(body);
 
