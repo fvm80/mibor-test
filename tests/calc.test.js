@@ -12,6 +12,7 @@ import {
   calcForecast
 } from '../js/calc.js';
 import { runDateTests } from './dates.test.js';
+import { runRenderTests } from './render.test.js';
 
 // === Мини-фреймворк тестирования ===
 
@@ -324,6 +325,9 @@ describe('Утилита round2', () => {
 
 // Тесты модуля работы с датами
 runDateTests(describe, it, assert);
+
+// Тесты защиты от гонок отрисовки
+runRenderTests(describe, it, assert);
 
 // === Экспорт для запуска ===
 
